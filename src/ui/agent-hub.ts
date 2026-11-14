@@ -150,6 +150,13 @@ export async function openAgentHub(ui: HubUICtx, deps: AgentHubDeps, initial?: A
   }
 }
 
+/**
+ * Roster selection while the focused agent or workflow has no row of its own
+ * (filtered out, or opened directly while off-scope). Distinct from `0` so the
+ * roster does not highlight whichever entry happens to sit at the stale index.
+ */
+const NO_ROSTER_ROW = -1;
+
 export class AgentHub implements Component, HubPaneHost, HubLogHost, AgentHubInputHost {
   view: HubView;
   selected = 0;
@@ -537,12 +544,19 @@ export class AgentHub implements Component, HubPaneHost, HubLogHost, AgentHubInp
         return items;
       }
       if (this.deps.manager.listAgents().some(a => a.id === this.focusId)) {
+        this.selected = NO_ROSTER_ROW;
+        this.focusRunId = undefined;
         return items;
       }
     } else if (this.focusRunId !== undefined) {
       const idx = items.findIndex(e => e.kind === "workflow" && e.workflow.id === this.focusRunId);
       if (idx !== -1) {
         this.selected = idx;
+        this.focusId = undefined;
+        return items;
+      }
+      if (this.deps.workflows?.().some(w => w.id === this.focusRunId) === true) {
+        this.selected = NO_ROSTER_ROW;
         this.focusId = undefined;
         return items;
       }
@@ -583,7 +597,11 @@ export class AgentHub implements Component, HubPaneHost, HubLogHost, AgentHubInp
 
   moveRosterSelection(direction: 1 | -1): void {
     const items = this.reconcileSelection();
-    const next = Math.min(items.length - 1, Math.max(0, this.selected + direction));
+    if (items.length === 0) return;
+    // With nothing selected, Down enters at the top and Up at the bottom.
+    const next = this.selected === NO_ROSTER_ROW
+      ? (direction === 1 ? 0 : items.length - 1)
+      : Math.min(items.length - 1, Math.max(0, this.selected + direction));
     if (next === this.selected) return;
     this.selectEntry(items, next);
     this.stopArmed = false;

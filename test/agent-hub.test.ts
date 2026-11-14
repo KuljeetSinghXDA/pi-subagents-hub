@@ -1403,3 +1403,38 @@ describe("agent hub selection identity lock", () => {
     hub.dispose?.();
   });
 });
+
+describe("agent hub selection when the focused row is filtered out", () => {
+  it("does not highlight a different agent while the transcript stays on the filtered-out one", () => {
+    const agents = [
+      makeRecord({ id: "a1", alias: "berry", description: "berry", startedAt: 100, session: sessionOf("msg one") }),
+      makeRecord({ id: "a2", alias: "banana", description: "banana", startedAt: 200, session: sessionOf("msg two") }),
+      makeRecord({ id: "a3", alias: "cherry", description: "cherry", startedAt: 300, session: sessionOf("msg three") }),
+    ];
+    const h = harness(agents);
+    h.open();
+    const hub = h.components.at(-1)!;
+
+    h.press("\x1b[B"); // focus banana (index 1)
+    expect(hub.focusId).toBe("a2");
+
+    // "err" matches berry and cherry only, so banana leaves the roster and the
+    // remaining rows shift: index 1 now holds cherry.
+    h.press("/");
+    for (const ch of "err") h.press(ch);
+    h.press("\r");
+
+    const frame = h.frame(240);
+    expect(frame.join("\n")).toContain("msg two");
+    expect(hub.focusId).toBe("a2");
+    expect(frame.some(l => l.includes("❯") && l.includes("cherry"))).toBe(false);
+    expect(frame.some(l => l.includes("❯") && l.includes("berry"))).toBe(false);
+
+    // Down enters the filtered roster at the first row, not at the stale index.
+    h.press("\x1b[B");
+    expect(hub.focusId).toBe("a1");
+    expect(h.frame(240).some(l => l.includes("❯") && l.includes("berry"))).toBe(true);
+
+    hub.dispose?.();
+  });
+});
