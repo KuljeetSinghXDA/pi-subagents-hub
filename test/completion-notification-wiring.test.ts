@@ -264,6 +264,58 @@ describe("background completion notification wiring", () => {
     await handlers.get("session_shutdown")?.();
   });
 
+  it("waits for each active background child in turn and stops waiting when none remain", async () => {
+    const parentSteer = vi.fn().mockResolvedValue("queued");
+    let resolveParent!: (value: Awaited<ReturnType<typeof runAgent>>) => void;
+    let resolveChildA!: (value: Awaited<ReturnType<typeof runAgent>>) => void;
+    let resolveChildB!: (value: Awaited<ReturnType<typeof runAgent>>) => void;
+
+    vi.mocked(runAgent)
+      .mockImplementationOnce((_ctx, _type, _prompt, opts) => {
+        opts.onSessionCreated?.({
+          steer: parentSteer,
+          dispose: vi.fn(),
+          subscribe: vi.fn(() => () => {}),
+          messages: [],
+        } as never);
+        return new Promise((resolve) => { resolveParent = resolve; });
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveChildA = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveChildB = resolve; }));
+
+    const { pi, tools, handlers } = makePi();
+    subagentsExtension(pi);
+    const spawnRes = await tools.get("Agent")!.execute(
+      "parent-call",
+      { prompt: "orchestrate", description: "parent", subagent_type: "general-purpose", run_in_background: true },
+      undefined,
+      undefined,
+      makeHeadlessCtx(),
+    ) as { content: Array<{ text: string }> };
+    const parentId = /Agent ID: (\S+)/.exec(spawnRes.content[0].text)![1];
+    const manager = vi.mocked(runAgent).mock.calls.find(c => c[3].agentId === parentId)![3].nestedRuntime!.manager;
+    manager.spawn(pi, makeHeadlessCtx(), "Explore", "first", {
+      description: "first child", isBackground: true, depth: 2, parentAgentId: parentId,
+    });
+    manager.spawn(pi, makeHeadlessCtx(), "Explore", "second", {
+      description: "second child", isBackground: true, depth: 2, parentAgentId: parentId,
+    });
+
+    // The durable runner calls this once per idle boundary: each call waits for
+    // one child and reports that there is still work to drain.
+    const firstWait = manager.waitForBackgroundChild!(parentId);
+    resolveChildA({ responseText: "first done", session: { dispose: vi.fn() } as never, aborted: false, steered: false });
+    await expect(firstWait).resolves.toBe(true);
+    const secondWait = manager.waitForBackgroundChild!(parentId);
+    resolveChildB({ responseText: "second done", session: { dispose: vi.fn() } as never, aborted: false, steered: false });
+    await expect(secondWait).resolves.toBe(true);
+    await expect(manager.waitForBackgroundChild!(parentId)).resolves.toBe(false);
+
+    expect(parentSteer).toHaveBeenCalledTimes(2);
+    resolveParent(completedRun());
+    await handlers.get("session_shutdown")?.();
+  });
+
   it("drains nested background child completion notifications on resumeAgent", async () => {
     let queued = false;
     const continueFn = vi.fn(async () => {

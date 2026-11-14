@@ -138,14 +138,21 @@ export function createManagerSetup(deps: ManagerSetupDeps) {
     30_000,
   );
 
-  function notifyParentOfNestedCompletion(record: AgentRecord): void {
-    if (record.parentAgentId === undefined) return;
-    if (!record.isBackground || record.status === "paused" || record.resultConsumed) return;
-    const owner = manager.getRecord(record.parentAgentId);
-    if (!owner || (owner.status !== "running" && owner.status !== "paused")) return;
-    if (owner.waitingChildIds?.has(record.id)) return;
+  /** A nested result the parent has neither collected inline nor read yet. */
+  function shouldNotifyParent(record: AgentRecord): record is AgentRecord & { parentAgentId: string } {
+    return record.parentAgentId !== undefined &&
+      record.isBackground === true &&
+      record.status !== "paused" &&
+      record.resultConsumed !== true;
+  }
+
+  function nestedCompletionMessage(record: AgentRecord): string {
     const footer = record.outputFile ? `\nFull transcript available at: ${record.outputFile}` : "";
-    const message = `${formatTaskNotification(record, 500, isShowCostEnabled())}${footer}\n\nUse get_subagent_result for full output.`;
+    return `${formatTaskNotification(record, 500, isShowCostEnabled())}${footer}\n\nUse get_subagent_result for full output.`;
+  }
+
+  /** Steer the owner's live session; a parent without one gets the message on its next run. */
+  function deliverNestedCompletion(owner: AgentRecord, message: string): void {
     if (!owner.session) {
       owner.pendingSteers = [...(owner.pendingSteers ?? []), message];
       return;
@@ -158,6 +165,15 @@ export function createManagerSetup(deps: ManagerSetupDeps) {
       owner.pendingChildNotifications?.delete(delivery);
     });
     owner.pendingChildNotifications.add(delivery);
+  }
+
+  function notifyParentOfNestedCompletion(record: AgentRecord): void {
+    if (!shouldNotifyParent(record)) return;
+    const owner = manager.getRecord(record.parentAgentId);
+    if (!owner || (owner.status !== "running" && owner.status !== "paused")) return;
+    // An inline get_subagent_result(wait: true) already delivers this result.
+    if (owner.waitingChildIds?.has(record.id)) return;
+    deliverNestedCompletion(owner, nestedCompletionMessage(record));
   }
 
   const manager = new AgentManager((record) => {
