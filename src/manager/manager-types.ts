@@ -288,3 +288,15 @@ export async function shutdownChildSession(session: AgentSession | undefined): P
   } catch { /* a partial session must degrade, not take the teardown down with it */ }
   try { session?.dispose?.(); } catch { /* ignore */ }
 }
+
+/**
+ * Flush and detach a record's output-transcript stream, once. Every terminal
+ * path calls this: a missed flush loses the run's last messages, and a missed
+ * unsubscribe leaves a listener on a session that is about to be disposed.
+ */
+export function cleanupRecordOutput(record: AgentRecord): void {
+  const cleanup = record.outputCleanup;
+  if (cleanup === undefined) return;
+  record.outputCleanup = undefined;
+  try { cleanup(); } catch { /* a write failure must not block teardown */ }
+}

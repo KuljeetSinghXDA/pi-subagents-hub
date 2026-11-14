@@ -5,9 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 import { runAgent } from "../src/agent-runner.js";
 import { bridgePiToolToDurableTool } from "../src/runner/durable-tool-bridge.js";
 
+// Booting the extension runtime is slower cold than a normal unit test.
+vi.setConfig({ testTimeout: 30_000 });
+
 function createMockCtx(): ExtensionContext {
   return {
-    cwd: process.cwd(),
+    cwd: "/mock/project",
     getSystemPrompt: () => "You are a test assistant.",
     model: { provider: "mock-provider", id: "mock-model" },
     modelRegistry: {
@@ -27,8 +30,6 @@ function createMockPi(): ExtensionAPI {
     },
   } as unknown as ExtensionAPI;
 }
-
-vi.setConfig({ testTimeout: 30_000 });
 
 describe("Durable runner with extensions and MCP tools", () => {
   it("boots extension runtime and binds tools to the durable registry", async () => {

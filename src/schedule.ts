@@ -169,14 +169,30 @@ export class SubagentScheduler {
 
   // ── Scheduling primitives ────────────────────────────────────────────
 
+  /**
+   * Arm `onFire` at `target`, hopping through `setTimeout` chunks of at most
+   * MAX_TIMEOUT_MS. An un-chunked delay above that bound is clamped to 1 ms by
+   * Node and fires the job immediately. Only the latest handle is tracked, so
+   * `unscheduleJob` cancels the live hop.
+   */
+  private armAt(jobId: string, target: number, onFire: () => void): void {
+    const arm = (): void => {
+      const delay = Math.min(MAX_TIMEOUT_MS, Math.max(1, target - Date.now()));
+      const timer = setTimeout(() => {
+        if (!this.store || this.intervals.get(jobId) !== timer) return;
+        if (Date.now() < target) {
+          arm();
+          return;
+        }
+        onFire();
+      }, delay);
+      this.intervals.set(jobId, timer);
+    };
+    arm();
+  }
+
   private armLongInterval(jobId: string, intervalMs: number, nextAt: number): void {
-    const remaining = Math.max(1, nextAt - Date.now());
-    const t = setTimeout(() => {
-      if (!this.store || this.intervals.get(jobId) !== t) return;
-      if (Date.now() < nextAt) {
-        this.armLongInterval(jobId, intervalMs, nextAt);
-        return;
-      }
+    this.armAt(jobId, nextAt, () => {
       this.executeJob(jobId);
       const current = this.store?.get(jobId);
       if (current?.enabled) {
@@ -184,25 +200,17 @@ export class SubagentScheduler {
       } else {
         this.intervals.delete(jobId);
       }
-    }, Math.min(remaining, MAX_TIMEOUT_MS));
-    this.intervals.set(jobId, t);
+    });
   }
 
   private armOnceTimeout(jobId: string, target: number): void {
-    const remaining = Math.max(1, target - Date.now());
-    const t = setTimeout(() => {
-      if (!this.store || this.intervals.get(jobId) !== t) return;
-      if (Date.now() < target) {
-        this.armOnceTimeout(jobId, target);
-        return;
-      }
+    this.armAt(jobId, target, () => {
       this.intervals.delete(jobId);
       this.executeJob(jobId);
       // Auto-disable one-shots after they fire (mirrors pi-cron-schedule)
       const updated = this.persist(jobId, { enabled: false });
       if (updated) this.emit({ type: "updated", job: updated });
-    }, Math.min(remaining, MAX_TIMEOUT_MS));
-    this.intervals.set(jobId, t);
+    });
   }
 
   private scheduleJob(job: ScheduledSubagent): void {

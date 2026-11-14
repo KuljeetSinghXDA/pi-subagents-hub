@@ -15,6 +15,7 @@ import { AgentRegistry } from "./manager/agent-registry.js";
 import { ConcurrencyPool } from "./manager/concurrency-pool.js";
 import {
   assertValidSpawnCwd,
+  cleanupRecordOutput,
   countToolUse,
   createPauseGate,
   DEFAULT_MAX_CONCURRENT,
@@ -456,10 +457,7 @@ export class AgentManager {
         record.session = session;
         detach();
 
-        if (record.outputCleanup) {
-          try { record.outputCleanup(); } catch { /* ignore */ }
-          record.outputCleanup = undefined;
-        }
+        cleanupRecordOutput(record);
 
         try {
           await this.worktrees.cleanup(pi, baseCwd, record, {
@@ -486,10 +484,7 @@ export class AgentManager {
         }
         detach();
 
-        if (record.outputCleanup) {
-          try { record.outputCleanup(); } catch { /* ignore */ }
-          record.outputCleanup = undefined;
-        }
+        cleanupRecordOutput(record);
 
         try {
           await this.worktrees.cleanup(pi, baseCwd, record, {
@@ -743,16 +738,10 @@ export class AgentManager {
     return true;
   }
 
-  private cleanupOutput(record: AgentRecord): void {
-    if (!record.outputCleanup) return;
-    try { record.outputCleanup(); } catch { /* ignore */ }
-    record.outputCleanup = undefined;
-  }
-
   private removeRecord(id: string, record: AgentRecord): void {
     releaseGate(record);
     record.abortController?.abort();
-    this.cleanupOutput(record);
+    cleanupRecordOutput(record);
     this.registry.tombstone(record);
     const session = record.session;
     record.session = undefined;
@@ -850,7 +839,7 @@ export class AgentManager {
     this.dequeue(() => true);
     const records = [...this.registry.agents.values()];
     const sessions = records.map(record => {
-      this.cleanupOutput(record);
+      cleanupRecordOutput(record);
       return record.session;
     });
     this.registry.agents.clear();

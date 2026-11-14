@@ -87,6 +87,31 @@ describe("AgentManager — record GC", () => {
     expect(dispose).toHaveBeenCalled();
   });
 
+  it("flushes the output stream of an evicted record", async () => {
+    manager = new AgentManager();
+    const { record } = await settled("stale output");
+    const cleanup = vi.fn();
+    record.outputCleanup = cleanup;
+    record.completedAt = Date.now() - (TEN_MINUTES + 30_000);
+
+    await vi.advanceTimersByTimeAsync(TICK);
+
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(record.outputCleanup).toBeUndefined();
+  });
+
+  it("flushes every output stream when the manager is disposed", async () => {
+    manager = new AgentManager();
+    const { record } = await settled("shutdown output");
+    const cleanup = vi.fn();
+    record.outputCleanup = cleanup;
+
+    await manager.dispose();
+
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(record.outputCleanup).toBeUndefined();
+  });
+
   it("retains an unconsumed stale result until it is consumed", async () => {
     // The timer bounds memory after a result is read. Evicting one the model
     // has not retrieved yet would throw the answer away unread.

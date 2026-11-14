@@ -10,6 +10,7 @@ import type { AgentRegistry } from "./agent-registry.js";
 import type { ConcurrencyPool } from "./concurrency-pool.js";
 import {
   type CompactionInfo,
+  cleanupRecordOutput,
   countToolUse,
   externallyHalted,
   gateOf,
@@ -273,10 +274,7 @@ export function startResume(
   const settle = () => {
     pool.detachParentAbort(record);
     releaseGate(record);
-    if (record.outputCleanup) {
-      try { record.outputCleanup(); } catch { /* ignore */ }
-      record.outputCleanup = undefined;
-    }
+    cleanupRecordOutput(record);
     abortOwnedChildren(id);
     pool.releaseSlot(record);
     try { onComplete?.(record); } catch (err) {
