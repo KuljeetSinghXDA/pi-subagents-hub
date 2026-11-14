@@ -68,7 +68,6 @@
     "extensions": [
       "./dist/index.js"
     ],
-    "video": "https://github.com/ahati/pi-subagents-hub/raw/master/media/demo.mp4",
     "image": "https://github.com/ahati/pi-subagents-hub/raw/master/media/Screenshot-Hub-FC.png"
   }
 }
