@@ -9,6 +9,16 @@ check the entries below for behaviour changes.
 
 ## [Unreleased]
 
+### Added
+
+- **Nested background subagents notify their parent.** A child spawned with `run_in_background: true` now delivers a `<task-notification>` steering message to the owning parent when it settles, and a cleanly idle parent waits for its active background children instead of ending the run and aborting them; a parent that fails, is stopped, or hits its turn limit still stops its children. Nested spawns still default to foreground, so unqualified sub-tasks keep returning inline. ([#12](https://github.com/ahati/pi-subagents-hub/pull/12) — thanks [@KuljeetSinghXDA](https://github.com/KuljeetSinghXDA))
+
+### Fixed
+
+- **The Agent Hub roster stays on the focused agent.** When entries shift — a nested child spawns, an agent resumes and moves in `startedAt` order, or a workflow expires — the highlight no longer lands on a different row than the transcript, and a focused agent that a filter hides highlights nothing rather than the row now at that index. ([#15](https://github.com/ahati/pi-subagents-hub/pull/15) — thanks [@KuljeetSinghXDA](https://github.com/KuljeetSinghXDA))
+
+- **Schedule delays above 24.85 days fire on time, fleet pause refusals are shown, and evicted transcripts are flushed.** Node clamps a single `setTimeout`/`setInterval` delay over `2^31-1` ms to 1 ms, so a `+30d` one-shot or a `30d` interval fired immediately; long delays are now armed in chunks. FleetView reports why a pause or resume was refused instead of silently doing nothing, and a record evicted or disposed still flushes its `.output` transcript before teardown. ([#16](https://github.com/ahati/pi-subagents-hub/pull/16) — thanks [@KuljeetSinghXDA](https://github.com/KuljeetSinghXDA))
+
 ## [2026.11.131] - 2026-11-13
 
 > **⚠️ Behavior change — a workflow starts only when the user asks for one** ([#451](https://github.com/tintinweb/pi-subagents/pull/451)). A request for a number of agents, like "use 10 agents to …", now runs parallel `Agent` calls instead of a `SubagentWorkflow`. To run a workflow, say so ("use a workflow") or name a saved workflow.
