@@ -2,10 +2,17 @@
  * durable-tool-bridge.ts — Adapts Pi and MCP tools to @earendil-works/pi-durable ToolRegistration.
  */
 
-import type { Context, JsonValue } from "@earendil-works/chord";
+import type { Context } from "@earendil-works/chord/context";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
+
+/**
+ * The JSON value union chord's tool signature takes. Declared here because
+ * chord 1.5.0 exports it from the package root and 1.5.2 from `./json`; the
+ * shape is unchanged, and the local alias compiles against both.
+ */
+type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 /** Set of tools that are idempotent and safe to rerun if interrupted by process restart. */
 const REPLAY_SAFE_TOOLS = new Set([

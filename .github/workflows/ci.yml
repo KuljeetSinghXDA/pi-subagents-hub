@@ -57,8 +57,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The Pi packages must move together: pi-durable pins its pi-ai/chord
+      # dependencies exactly, so updating only the top-level three leaves a
+      # second pi-ai copy whose types do not structurally match (Models,
+      # TranscriptContext).
       - name: Install current Pi
-        run: npm install --no-save @earendil-works/pi-coding-agent@latest @earendil-works/pi-ai@latest @earendil-works/pi-tui@latest
+        run: npm install --no-save @earendil-works/pi-coding-agent@latest @earendil-works/pi-ai@latest @earendil-works/pi-tui@latest @earendil-works/pi-durable@latest @earendil-works/chord@latest @earendil-works/pi-agent-core@latest
       - name: Typecheck against current Pi
         run: npm run typecheck
       - name: Test suite against current Pi
