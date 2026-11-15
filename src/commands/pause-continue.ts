@@ -95,6 +95,19 @@ export function resumeAgentSession(
   }).then(resumed => resumed !== undefined);
 }
 
+/** Resume every paused nested child of `parent`, so a parent never runs alone. */
+export async function resumePausedChildren(
+  ctx: ExtensionContext,
+  parent: AgentRecord,
+  deps: PauseContinueDeps,
+): Promise<void> {
+  for (const child of deps.manager.listAgents()) {
+    if (child.parentAgentId !== parent.id || child.workflowId !== undefined) continue;
+    if (child.status !== "paused") continue;
+    await resumeAgentById(ctx, child, deps);
+  }
+}
+
 export async function resumeAgentById(
   ctx: ExtensionContext,
   record: AgentRecord,
@@ -112,11 +125,7 @@ export async function resumeAgentById(
         description: record.description,
       });
     }
-    for (const child of deps.manager.listAgents()) {
-      if (child.parentAgentId !== record.id || child.workflowId !== undefined) continue;
-      if (child.status !== "paused") continue;
-      await resumeAgentById(ctx, child, deps);
-    }
+    await resumePausedChildren(ctx, record, deps);
   }
   return resumed;
 }
@@ -143,6 +152,59 @@ export function pauseAgentRecord(
   return undefined;
 }
 
+export type PauseSurfaceDeps = Pick<PauseContinueDeps, "pi" | "manager" | "park" | "workflowTasks">;
+
+/**
+ * Pause one agent and persist it. Every surface that can pause goes through
+ * here, so quitting always finds the park the user saw acknowledged.
+ */
+export function pauseAgentAndSync(
+  ctx: ExtensionContext | undefined,
+  record: AgentRecord,
+  deps: PauseSurfaceDeps,
+): string | undefined {
+  const refusal = pauseAgentRecord(record, deps.pi, deps.manager);
+  if (refusal === undefined && ctx) {
+    syncPauseManifest(ctx, deps.park, deps.manager, deps.workflowTasks);
+  }
+  return refusal;
+}
+
+/** A nested record that must survive a restart with its paused ancestor. */
+function isParkableWithParent(record: AgentRecord, park: ParkGateController): boolean {
+  if (record.status === "paused") return true;
+  // A running background child would be lost on quit; park its transcript too.
+  return record.isBackground === true &&
+    record.resultConsumed !== true &&
+    typeof record.sessionFile === "string" &&
+    park.capturedStatus(record) !== undefined;
+}
+
+/**
+ * Walk the descendants of the already-paused top-level agents (the map is in
+ * spawn order, so a single pass adds each child before its own children).
+ */
+function parkedNestedDescendants(
+  allAgents: readonly AgentRecord[],
+  pausedIds: Set<string>,
+  park: ParkGateController,
+): AgentRecord[] {
+  const parked: AgentRecord[] = [];
+  let added = true;
+  while (added) {
+    added = false;
+    for (const agent of allAgents) {
+      if (agent.parentAgentId === undefined || agent.workflowId !== undefined) continue;
+      if (pausedIds.has(agent.id) || !pausedIds.has(agent.parentAgentId)) continue;
+      if (!isParkableWithParent(agent, park)) continue;
+      pausedIds.add(agent.id);
+      parked.push(agent);
+      added = true;
+    }
+  }
+  return parked;
+}
+
 export function syncPauseManifest(
   ctx: ExtensionContext,
   park: ParkGateController,
@@ -159,29 +221,7 @@ export function syncPauseManifest(
     const topPaused = allAgents
       .filter(isTopLevelAgent)
       .filter(a => a.status === "paused");
-    const pausedIds = new Set(topPaused.map(a => a.id));
-    const nestedToPark: AgentRecord[] = [];
-    let added = true;
-    while (added) {
-      added = false;
-      for (const a of allAgents) {
-        if (a.parentAgentId === undefined || a.workflowId !== undefined) continue;
-        if (pausedIds.has(a.id) || !pausedIds.has(a.parentAgentId)) continue;
-        if (a.status === "paused") {
-          pausedIds.add(a.id);
-          nestedToPark.push(a);
-          added = true;
-        } else if (
-          a.isBackground === true &&
-          a.resultConsumed !== true &&
-          typeof a.sessionFile === "string" &&
-          park.capturedStatus(a) !== undefined
-        ) {
-          pausedIds.add(a.id);
-          nestedToPark.push(a);
-        }
-      }
-    }
+    const nestedToPark = parkedNestedDescendants(allAgents, new Set(topPaused.map(a => a.id)), park);
     const entries: PausedAgentEntry[] = [...topPaused, ...nestedToPark]
       .map(a => park.pausedAgentRow(a))
       .filter((a): a is PausedAgentEntry => a !== undefined)
@@ -280,84 +320,127 @@ export async function pauseAllCommand(
   ctx.ui.notify(parts.join("; ") + ".", "info");
 }
 
-async function reviveNestedPausedEntry(
-  ctx: ExtensionContext,
+/** Launch context a nested entry inherits from its (possibly revived) parent. */
+interface NestedReviveTarget {
+  parentId: string;
+  depth: number;
+  maxSubagentDepth?: number | undefined;
+  rootSessionId?: string | undefined;
+  allowedSubagents?: "all" | string[] | undefined;
+}
+
+/** Resolve the parent a nested entry belongs to, or say why it cannot be revived now. */
+function nestedReviveTarget(
   entry: PausedAgentEntry,
   deps: PauseContinueDeps,
-  parentIdMap?: Map<string, string>,
-): Promise<"resumed" | "respawned" | "stale" | "failed"> {
-  const { manager, reloadCustomAgents, spawnResolved, resolveModel } = deps;
+  parentIdMap: Map<string, string> | undefined,
+): NestedReviveTarget | "stale" | "failed" {
   if (entry.parentAgentId === undefined) return "failed";
-  const resolvedParentId = parentIdMap?.get(entry.parentAgentId) ?? entry.parentAgentId;
-  const parent = manager.getRecord(resolvedParentId);
+  // A parent revived earlier in this pass has a new id; children follow it.
+  const parentId = parentIdMap?.get(entry.parentAgentId) ?? entry.parentAgentId;
+  const parent = deps.manager.getRecord(parentId);
   if (!parent || (parent.status !== "running" && parent.status !== "queued" && parent.status !== "paused")) {
     return "stale";
   }
-  const parentConfig = getAgentConfig(parent.type);
-  const nestedAllowed = parentConfig?.allowedSubagents;
-  const nestedDepth = entry.depth ?? ((parent.depth ?? 1) + 1);
-  const maxDepth = entry.maxSubagentDepth ?? parent.maxSubagentDepth;
+  const maxSubagentDepth = entry.maxSubagentDepth ?? parent.maxSubagentDepth;
   const rootSessionId = entry.rootSessionId ?? parent.rootSessionId;
+  const allowedSubagents = getAgentConfig(parent.type)?.allowedSubagents;
+  return {
+    parentId,
+    depth: entry.depth ?? ((parent.depth ?? 1) + 1),
+    ...(maxSubagentDepth !== undefined ? { maxSubagentDepth } : {}),
+    ...(rootSessionId !== undefined ? { rootSessionId } : {}),
+    ...(allowedSubagents !== undefined ? { allowedSubagents } : {}),
+  };
+}
 
-  if (entry.sessionFile === undefined) {
-    const respawn = entry.respawn;
-    if (!respawn) return "failed";
-    reloadCustomAgents();
-    const dispatch = resolveSpawnType(entry.type);
-    if (!dispatch.ok || dispatch.fellBackFrom !== undefined) return "failed";
-    let model: unknown;
-    if (respawn.model !== undefined) {
-      const resolved = resolveModel(respawn.model, ctx.modelRegistry);
-      if (typeof resolved === "string") return "failed";
-      model = resolved;
-    }
-    try {
-      const id = spawnResolved(deps.pi, ctx, dispatch.type, respawn.prompt, {
-        description: entry.description,
-        reclaim: { id: entry.id },
-        isBackground: true,
-        bypassQueue: true,
-        parentAgentId: resolvedParentId,
-        depth: nestedDepth,
-        ...(maxDepth !== undefined ? { maxSubagentDepth: maxDepth } : {}),
-        ...(rootSessionId !== undefined ? { rootSessionId } : {}),
-        ...(nestedAllowed !== undefined ? { allowedSubagents: nestedAllowed } : {}),
-        ...(model !== undefined ? { model } : {}),
-        ...(respawn.thinking !== undefined ? { thinkingLevel: respawn.thinking } : {}),
-        ...(respawn.maxTurns !== undefined ? { maxTurns: respawn.maxTurns } : {}),
-        ...(respawn.isolated !== undefined ? { isolated: respawn.isolated } : {}),
-        ...(respawn.inheritContext !== undefined ? { inheritContext: respawn.inheritContext } : {}),
-      });
-      parentIdMap?.set(entry.id, id);
-      await manager.awaitStartup(id);
-      return "respawned";
-    } catch {
-      return "failed";
-    }
+/** Launch a nested entry under its parent, keeping the nest's depth and allowlist. */
+function nestedLaunchOptions(entry: PausedAgentEntry, target: NestedReviveTarget): Record<string, unknown> {
+  return {
+    description: entry.description,
+    reclaim: { id: entry.id },
+    isBackground: true,
+    bypassQueue: true,
+    parentAgentId: target.parentId,
+    depth: target.depth,
+    ...(target.maxSubagentDepth !== undefined ? { maxSubagentDepth: target.maxSubagentDepth } : {}),
+    ...(target.rootSessionId !== undefined ? { rootSessionId: target.rootSessionId } : {}),
+    ...(target.allowedSubagents !== undefined ? { allowedSubagents: target.allowedSubagents } : {}),
+  };
+}
+
+/** A nested entry with no transcript left can only be re-run from its prompt. */
+async function respawnNestedEntry(
+  ctx: ExtensionContext,
+  entry: PausedAgentEntry,
+  target: NestedReviveTarget,
+  deps: PauseContinueDeps,
+  parentIdMap: Map<string, string> | undefined,
+): Promise<"respawned" | "failed"> {
+  const respawn = entry.respawn;
+  if (!respawn) return "failed";
+  deps.reloadCustomAgents();
+  const dispatch = resolveSpawnType(entry.type);
+  if (!dispatch.ok || dispatch.fellBackFrom !== undefined) return "failed";
+  let model: unknown;
+  if (respawn.model !== undefined) {
+    const resolved = deps.resolveModel(respawn.model, ctx.modelRegistry);
+    if (typeof resolved === "string") return "failed";
+    model = resolved;
   }
+  try {
+    const id = deps.spawnResolved(deps.pi, ctx, dispatch.type, respawn.prompt, {
+      ...nestedLaunchOptions(entry, target),
+      ...(model !== undefined ? { model } : {}),
+      ...(respawn.thinking !== undefined ? { thinkingLevel: respawn.thinking } : {}),
+      ...(respawn.maxTurns !== undefined ? { maxTurns: respawn.maxTurns } : {}),
+      ...(respawn.isolated !== undefined ? { isolated: respawn.isolated } : {}),
+      ...(respawn.inheritContext !== undefined ? { inheritContext: respawn.inheritContext } : {}),
+    });
+    parentIdMap?.set(entry.id, id);
+    await deps.manager.awaitStartup(id);
+    return "respawned";
+  } catch {
+    return "failed";
+  }
+}
 
-  reloadCustomAgents();
+/** Reopen a nested entry's saved transcript under its parent. */
+async function resumeNestedEntry(
+  ctx: ExtensionContext,
+  entry: PausedAgentEntry,
+  target: NestedReviveTarget,
+  deps: PauseContinueDeps,
+  parentIdMap: Map<string, string> | undefined,
+): Promise<"resumed" | "failed"> {
+  if (entry.sessionFile === undefined) return "failed";
+  deps.reloadCustomAgents();
   const reopen = reopenTarget(entry.type, entry.sessionFile);
   if (!reopen.ok) return "failed";
   try {
-    const id = spawnResolved(deps.pi, ctx, reopen.type, undefined, {
-      description: entry.description,
-      reclaim: { id: entry.id },
+    const id = deps.spawnResolved(deps.pi, ctx, reopen.type, undefined, {
+      ...nestedLaunchOptions(entry, target),
       resumeSessionFile: reopen.sessionFile,
-      isBackground: true,
-      bypassQueue: true,
-      parentAgentId: resolvedParentId,
-      depth: nestedDepth,
-      ...(maxDepth !== undefined ? { maxSubagentDepth: maxDepth } : {}),
-      ...(rootSessionId !== undefined ? { rootSessionId } : {}),
-      ...(nestedAllowed !== undefined ? { allowedSubagents: nestedAllowed } : {}),
     });
     parentIdMap?.set(entry.id, id);
-    await manager.awaitStartup(id);
+    await deps.manager.awaitStartup(id);
     return "resumed";
   } catch {
     return "failed";
   }
+}
+
+async function reviveNestedPausedEntry(
+  ctx: ExtensionContext,
+  entry: PausedAgentEntry,
+  deps: PauseContinueDeps,
+  parentIdMap: Map<string, string> | undefined,
+): Promise<"resumed" | "respawned" | "stale" | "failed"> {
+  const target = nestedReviveTarget(entry, deps, parentIdMap);
+  if (target === "stale" || target === "failed") return target;
+  return entry.sessionFile === undefined
+    ? respawnNestedEntry(ctx, entry, target, deps, parentIdMap)
+    : resumeNestedEntry(ctx, entry, target, deps, parentIdMap);
 }
 
 export async function continuePausedEntry(

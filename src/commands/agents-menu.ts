@@ -36,6 +36,7 @@ import {
 } from "./agent-wizards.js";
 import {
   type PauseContinueDeps,
+  pauseAgentAndSync,
   pauseAgentRecord,
   resumeAgentById,
   reviveTombstone,
@@ -100,12 +101,11 @@ export async function pauseAgentsCommand(ctx: ExtensionCommandContext, target: s
       ctx.ui.notify(`@${name} is not active (${record.status}).`, "warning");
       return;
     }
-    const refusal = pauseAgentRecord(record, pi, manager);
+    const refusal = pauseAgentAndSync(ctx, record, deps);
     if (refusal) {
       ctx.ui.notify(`Could not pause @${name} — ${refusal}.`, "warning");
       return;
     }
-    syncPauseManifest(ctx, park, manager, deps.workflowTasks);
     deps.widget?.update();
     deps.fleet?.update();
     ctx.ui.notify(`Paused @${name}.`, "info");

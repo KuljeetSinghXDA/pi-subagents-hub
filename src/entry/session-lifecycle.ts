@@ -48,6 +48,7 @@ export interface AgentLifecycleActions {
   reloadCustomAgents: () => void;
   syncPauseManifest: (ctx: ExtensionContext) => void;
   pauseAgentRecord: (rec: AgentRecord) => string | undefined;
+  pauseAgentAndSync: (ctx: ExtensionContext | undefined, rec: AgentRecord) => string | undefined;
   resumeAgentById: (ctx: ExtensionContext, rec: AgentRecord, prompt?: string) => Promise<boolean>;
   resolveAgentRef: (ref: string) => AgentRecord | undefined;
   spawnTopLevel: (piRef: any, ctxRef: any, type: string, prompt: string, options: any) => string;
@@ -152,6 +153,7 @@ export function registerSessionLifecycle(
     reloadCustomAgents,
     syncPauseManifest,
     pauseAgentRecord,
+    pauseAgentAndSync,
     resumeAgentById,
     resolveAgentRef,
     isSchedulingEnabled,
@@ -205,12 +207,7 @@ export function registerSessionLifecycle(
           abort: (id) => manager.abort(id),
           pauseAgent: (id) => {
             const record = manager.getRecord(id);
-            const paused = record !== undefined && pauseAgentRecord(record) === undefined;
-            if (paused) {
-              const activeCtx = getCurrentCtx();
-              if (activeCtx) syncPauseManifest(activeCtx);
-            }
-            return paused;
+            return record !== undefined && pauseAgentAndSync(getCurrentCtx(), record) === undefined;
           },
           resumeAgent: (id, prompt) => {
             const record = manager.getRecord(id);

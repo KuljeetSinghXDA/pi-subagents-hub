@@ -1260,12 +1260,56 @@ describe("pause manifest sync across surfaces and nested children", () => {
     await flush();
     expect(new Set(manifest().list().map(e => e.id))).toEqual(new Set([id1, id2]));
 
-    // Resume both via /agents resume, then test bulk /agents pause.
+    // Resume both via /agents resume, then test bulk /agents pause. Clear the
+    // manifest first: a stale copy would satisfy the assertion on its own.
     await b.commands.get("agents").handler("resume", idleCtx());
     await flush();
+    manifest().replace([]);
     await b.commands.get("agents").handler("pause", idleCtx());
     await flush();
     expect(new Set(manifest().list().map(e => e.id))).toEqual(new Set([id1, id2]));
+  });
+
+  it("resumes a paused parent's nested children when the parent is resumed through Agent({ resume })", async () => {
+    const b = boot();
+    await b.lifecycle.get("session_start")({ type: "session_start", reason: "startup" }, ctx());
+    const parentId = await spawnRunning(b, resumableSession, "parent agent");
+
+    vi.mocked(runAgent).mockImplementationOnce(
+      (_ctx: any, _type: any, _prompt: any, opts: any) =>
+        new Promise(() => {
+          opts.onSessionCreated?.(resumableSession());
+        }) as any,
+    );
+    const mgr = manager().manager;
+    const childId = mgr.spawn(b.pi, ctx(), "Explore", "child work", {
+      description: "nested child",
+      isBackground: true,
+      parentAgentId: parentId,
+      depth: 2,
+    });
+    await flush();
+
+    const { cmdCtx } = runCommand(b, "pause");
+    await flush();
+    expect(cmdCtx.ui.notify).toHaveBeenCalledWith("Paused 1 agent.", "info");
+    expect(mgr.getRecord(parentId)?.status).toBe("paused");
+    expect(mgr.getRecord(childId)?.status).toBe("paused");
+
+    // The parent is resumed from the tool, not /continue: the same recursive
+    // resume must still bring the child back.
+    vi.mocked(resumeAgent).mockImplementation(() => new Promise(() => {}) as any);
+    await b.tools.get("Agent").execute(
+      "tc-resume-parent",
+      { prompt: "continue", description: "parent agent", subagent_type: "Explore", resume: parentId, run_in_background: true },
+      undefined,
+      undefined,
+      ctx(),
+    );
+    await flush();
+
+    expect(mgr.getRecord(parentId)?.status).toBe("running");
+    expect(mgr.getRecord(childId)?.status).toBe("running");
   });
 
   it("pauses and resumes nested background children alongside their paused parent, and restores them across restart", async () => {

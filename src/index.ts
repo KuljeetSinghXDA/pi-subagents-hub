@@ -45,9 +45,11 @@ import {
   continuePausedCommand,
   continuePausedEntry,
   type PauseContinueDeps,
+  pauseAgentAndSync,
   pauseAgentRecord,
   pauseAllCommand,
   resumeAgentById,
+  resumePausedChildren,
   syncPauseManifest,
 } from "./commands/pause-continue.js";
 import { ParkGateController } from "./commands/pause-state.js";
@@ -339,12 +341,7 @@ export default function (pi: ExtensionAPI) {
   fleet.setLifecycleActions({
     pause: (id) => {
       const record = manager.getRecord(id);
-      if (!record) return "no such agent";
-      const refusal = pauseAgentRecord(record, pi, manager);
-      if (refusal === undefined && currentCtx) {
-        syncPauseManifest(currentCtx, park, manager, workflowTasks);
-      }
-      return refusal;
+      return record ? pauseAgentAndSync(currentCtx, record, pauseDeps) : "no such agent";
     },
     resume: (id) => {
       const record = manager.getRecord(id);
@@ -497,13 +494,7 @@ export default function (pi: ExtensionAPI) {
     joinTurnGroup,
     resolveAgentRef,
     onPausedStateChanged: async (ctx, parent) => {
-      if (parent) {
-        for (const child of manager.listAgents()) {
-          if (child.parentAgentId === parent.id && child.workflowId === undefined && child.status === "paused") {
-            await resumeAgentById(ctx, child, pauseDeps);
-          }
-        }
-      }
+      if (parent) await resumePausedChildren(ctx, parent, pauseDeps);
     },
   });
 
@@ -726,6 +717,7 @@ export default function (pi: ExtensionAPI) {
       reloadCustomAgents: () => reloadCustomAgents(),
       syncPauseManifest: (c) => syncPauseManifest(c, park, manager, workflowTasks),
       pauseAgentRecord: (r) => pauseAgentRecord(r, pi, manager),
+      pauseAgentAndSync: (c, r) => pauseAgentAndSync(c, r, pauseDeps),
       resumeAgentById: (c, r, p) => resumeAgentById(c, r, pauseDeps, p),
       resolveAgentRef,
       isSchedulingEnabled,

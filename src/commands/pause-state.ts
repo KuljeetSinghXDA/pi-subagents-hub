@@ -38,6 +38,18 @@ export function pauseOwnedBackgroundChildren(parentId: string, manager: AgentMan
   return paused;
 }
 
+/** The nest a paused record belongs to, carried so a revived child can rebind. */
+function nestedContextFields(
+  record: AgentRecord,
+): Pick<PausedAgentEntry, "parentAgentId" | "depth" | "maxSubagentDepth" | "rootSessionId"> {
+  return {
+    ...(record.parentAgentId !== undefined ? { parentAgentId: record.parentAgentId } : {}),
+    ...(record.depth !== undefined ? { depth: record.depth } : {}),
+    ...(record.maxSubagentDepth !== undefined ? { maxSubagentDepth: record.maxSubagentDepth } : {}),
+    ...(record.rootSessionId !== undefined ? { rootSessionId: record.rootSessionId } : {}),
+  };
+}
+
 export class ParkGateController {
   armedPause = false;
   mainTurnSwitchInProgress = false;
@@ -118,10 +130,7 @@ export class ParkGateController {
       description: record.description,
       sessionFile: record.sessionFile,
       pausedAt: new Date().toISOString(),
-      ...(record.parentAgentId !== undefined ? { parentAgentId: record.parentAgentId } : {}),
-      ...(record.depth !== undefined ? { depth: record.depth } : {}),
-      ...(record.maxSubagentDepth !== undefined ? { maxSubagentDepth: record.maxSubagentDepth } : {}),
-      ...(record.rootSessionId !== undefined ? { rootSessionId: record.rootSessionId } : {}),
+      ...nestedContextFields(record),
       ...(status
         ? {
             status,
@@ -157,10 +166,7 @@ export class ParkGateController {
       description: record.description,
       respawn,
       pausedAt: new Date().toISOString(),
-      ...(record.parentAgentId !== undefined ? { parentAgentId: record.parentAgentId } : {}),
-      ...(record.depth !== undefined ? { depth: record.depth } : {}),
-      ...(record.maxSubagentDepth !== undefined ? { maxSubagentDepth: record.maxSubagentDepth } : {}),
-      ...(record.rootSessionId !== undefined ? { rootSessionId: record.rootSessionId } : {}),
+      ...nestedContextFields(record),
     };
   }
 
