@@ -11,6 +11,12 @@ check the entries below for behaviour changes.
 
 ### Added
 
+- **`pi -p` and JSON mode keep the run open for background work.** A turn that ends while background agents or workflows are still running now waits at `agent_before_settle`, reports on stderr, and hands the completions to the model as a continuing turn; `headlessWaitMinutes` (default `0` = no limit) stops the work at that ceiling. TUI and RPC sessions never wait. ([tintinweb/pi-subagents#452](https://github.com/tintinweb/pi-subagents/pull/452) — thanks [@tintinweb](https://github.com/tintinweb); ported in [#17](https://github.com/ahati/pi-subagents-hub/pull/17))
+
+- **Per-child prompt cache retention.** A file-only `cacheRetention` setting (`inherit` by default, else `none`, `short`, or `long`) applies to nested, workflow, scheduled, reopened and mention-clone sessions; an explicit per-request value still wins. ([tintinweb/pi-subagents#456](https://github.com/tintinweb/pi-subagents/pull/456) — thanks [@0oAstro](https://github.com/0oAstro); ported in [#17](https://github.com/ahati/pi-subagents-hub/pull/17))
+
+- **Global `requiredExtensions` policy handlers.** Handler-only extensions named in the global settings file now load into every subagent session, `isolated: true` included, while their tools stay out of the child's scope. The list is global-only, and a malformed global file or a missing/broken required extension fails the spawn closed. ([tintinweb/pi-subagents#248](https://github.com/tintinweb/pi-subagents/pull/248) — thanks [@trevorleibert-mixpanel](https://github.com/trevorleibert-mixpanel); ported in [#17](https://github.com/ahati/pi-subagents-hub/pull/17))
+
 - **Nested background subagents notify their parent.** A child spawned with `run_in_background: true` now delivers a `<task-notification>` steering message to the owning parent when it settles, and a cleanly idle parent waits for its active background children instead of ending the run and aborting them; a parent that fails, is stopped, or hits its turn limit still stops its children. Nested spawns still default to foreground, so unqualified sub-tasks keep returning inline. ([#12](https://github.com/ahati/pi-subagents-hub/pull/12) — thanks [@KuljeetSinghXDA](https://github.com/KuljeetSinghXDA))
 
 ### Changed
@@ -18,6 +24,12 @@ check the entries below for behaviour changes.
 - **A reopened agent keeps the model and thinking level it last ran with.** `Agent({ resume })`, an `@handle` after eviction, `/continue` and a workflow's `resume` now restore the saved selection instead of falling back to the parent session's model; the agent type's current pin is the fallback when the saved session records neither. Tools, system prompt and turn caps still follow the type's current definition. ([#13](https://github.com/ahati/pi-subagents-hub/pull/13) — thanks [@KuljeetSinghXDA](https://github.com/KuljeetSinghXDA))
 
 ### Fixed
+
+- **A foreground `Agent` result reports the agent's resumable name.** A blocking spawn's failure and a foreground resume now carry `Agent: <name>` (the generated or caller-given one); nested inline results keep `Agent ID:` because nested children have no alias and their `resume` takes the id. ([tintinweb/pi-subagents#311](https://github.com/tintinweb/pi-subagents/pull/311) — thanks [@knthmn](https://github.com/knthmn); ported in [#17](https://github.com/ahati/pi-subagents-hub/pull/17))
+
+- **Worktree preservation failures keep the work and surface it.** The preservation commit bypasses commit signing, a failed commit or removal keeps the worktree and returns its path (and branch), and the record settles as an error instead of reporting no changes. ([tintinweb/pi-subagents#268](https://github.com/tintinweb/pi-subagents/pull/268) — thanks [@HerbertGao](https://github.com/HerbertGao); ported in [#17](https://github.com/ahati/pi-subagents-hub/pull/17))
+
+- **Workflow `resumeFromRunId` matches calls by structural position.** Parallel thunks, pipeline item chains and nested workflow bodies number their own calls, so a different completion order no longer loses cache hits; the first missing, changed, failed or invalid call stops replay for the whole run. Journals without structural paths are ignored and run live. ([tintinweb/pi-subagents#409](https://github.com/tintinweb/pi-subagents/pull/409) — thanks [@ajaynomics](https://github.com/ajaynomics); ported in [#17](https://github.com/ahati/pi-subagents-hub/pull/17))
 
 - **Every pause surface writes the same manifest, and a paused parent's nested background children are parked and restored with it.** `/agents pause`, the hub/fleet `p` key, `subagents:rpc:pause` and `/pause` now sync `PauseStore`; a paused parent's background descendants get their own rows, and `/continue` revives them under the parent's new id. The bulk pause path no longer passes the custom-agent reloader where the manifest sync belongs. ([#14](https://github.com/ahati/pi-subagents-hub/pull/14) — thanks [@KuljeetSinghXDA](https://github.com/KuljeetSinghXDA))
 
