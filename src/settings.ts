@@ -6,7 +6,9 @@
 // `.pi` directory in every repo the user happens to be in (#391).
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join } from "node:path";
+import type { CacheRetention } from "@earendil-works/pi-ai";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { NO_FALLBACK } from "./agent-types.js";
 import type { AgentMentionMode, JoinMode, UIStyle, ViewerStyle } from "./types.js";
@@ -51,6 +53,12 @@ export interface SubagentsSettings {
    */
   defaultMaxTurns?: number;
   graceTurns?: number;
+  /**
+   * How long a headless parent (`pi -p`, JSON mode) waits, in minutes, for
+   * background agents and workflows after its turn ends before stopping them —
+   * `0` = no limit, the default. `10` matches Claude Code's ceiling.
+   */
+  headlessWaitMinutes?: number;
   defaultJoinMode?: JoinMode;
   /**
    * Whether a top-level `Agent` spawn that doesn't say runs detached.
@@ -358,6 +366,19 @@ export interface SubagentsSettings {
   uncutPromptProviders?: string[];
 }
 
+/** Settings that exist only in subagents.json, not in the /agents menu snapshot. */
+export interface SubagentsFileSettings extends SubagentsSettings {
+  /** Per-child model-call prompt cache retention. `inherit` (or absent) leaves Pi's request options untouched, including `PI_CACHE_RETENTION`. */
+  cacheRetention?: CacheRetention | "inherit";
+  /**
+   * Global-only policy extensions: handler-only extensions loaded into every
+   * subagent session, isolated ones included. Removed from the settings that
+   * `loadSettings` returns, and refused from a project file, so a project can
+   * never weaken machine-level policy.
+   */
+  requiredExtensions?: string[];
+}
+
 export type ToolDescriptionMode = "full" | "compact" | "custom";
 
 /** Setter hooks used by applySettings to wire persisted values into in-memory state. */
@@ -367,6 +388,7 @@ export interface SettingsAppliers {
   setMaxConcurrentNested: (n: number) => void;
   setDefaultMaxTurns: (n: number) => void;
   setGraceTurns: (n: number) => void;
+  setHeadlessWaitMinutes: (n: number) => void;
   setDefaultJoinMode: (mode: JoinMode) => void;
   setBackgroundByDefault: (b: boolean) => void;
   setSchedulingEnabled: (b: boolean) => void;
@@ -429,10 +451,18 @@ function sanitizePackageGate(val: unknown): boolean | string[] | undefined {
 }
 
 /** Drop fields that don't match the expected shape. Silent — garbage becomes absent. */
-function sanitize(raw: unknown): SubagentsSettings {
+function sanitize(raw: unknown): SubagentsFileSettings {
   if (!raw || typeof raw !== "object") return {};
   const r = raw as Record<string, unknown>;
-  const out: SubagentsSettings = {};
+  const out: SubagentsFileSettings = {};
+  if (Array.isArray(r.requiredExtensions)
+    && r.requiredExtensions.every((entry) => typeof entry === "string" && entry.trim())
+  ) {
+    out.requiredExtensions = [...new Set(r.requiredExtensions.map((entry) => (entry as string).trim()))];
+  }
+  if (r.cacheRetention === "inherit" || r.cacheRetention === "none" || r.cacheRetention === "short" || r.cacheRetention === "long") {
+    out.cacheRetention = r.cacheRetention;
+  }
   if (
     Number.isInteger(r.maxConcurrent) &&
     (r.maxConcurrent as number) >= 1 &&
@@ -470,6 +500,13 @@ function sanitize(raw: unknown): SubagentsSettings {
     (r.graceTurns as number) <= GRACE_TURNS_CEILING
   ) {
     out.graceTurns = r.graceTurns as number;
+  }
+  if (
+    Number.isInteger(r.headlessWaitMinutes) &&
+    (r.headlessWaitMinutes as number) >= 0 &&
+    (r.headlessWaitMinutes as number) <= 24 * 60
+  ) {
+    out.headlessWaitMinutes = r.headlessWaitMinutes as number;
   }
   if (
     Number.isInteger(r.maxSubagentDepth) &&
@@ -561,8 +598,8 @@ function sanitize(raw: unknown): SubagentsSettings {
   return out;
 }
 
-function globalPath(): string {
-  return join(getAgentDir(), "subagents.json");
+function globalPath(agentDir: string = getAgentDir()): string {
+  return join(agentDir, "subagents.json");
 }
 
 function projectPath(cwd: string): string {
@@ -574,7 +611,7 @@ function projectPath(cwd: string): string {
  * exists but can't be parsed emits a warning to stderr so users aren't
  * silently reverted to defaults — and still returns `{}` so startup proceeds.
  */
-function readSettingsFile(path: string): SubagentsSettings {
+function readSettingsFile(path: string): SubagentsFileSettings {
   if (!existsSync(path)) return {};
   try {
     return sanitize(JSON.parse(readFileSync(path, "utf-8")));
@@ -586,8 +623,47 @@ function readSettingsFile(path: string): SubagentsSettings {
 }
 
 /** Load merged settings: global provides defaults, project overrides. */
-export function loadSettings(cwd: string = process.cwd()): SubagentsSettings {
-  return { ...readSettingsFile(globalPath()), ...readSettingsFile(projectPath(cwd)) };
+export function loadSettings(cwd: string = process.cwd()): SubagentsFileSettings {
+  const global = { ...readSettingsFile(globalPath()) };
+  const project = { ...readSettingsFile(projectPath(cwd)) };
+  // Global-only policy surface: never merged into ordinary settings, so neither
+  // the menu nor a project file can influence it.
+  delete global.requiredExtensions;
+  delete project.requiredExtensions;
+  return { ...global, ...project };
+}
+
+/**
+ * Read the global-only required extension list. Any malformed global file or
+ * invalid entry throws: policy enforcement that cannot be proven must stop the
+ * spawn rather than silently run without it.
+ */
+function readRequiredExtensions(path: string): string[] {
+  if (!existsSync(path)) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf-8"));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`Cannot enforce required subagent extensions from ${path}: ${reason}`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`Cannot enforce required subagent extensions: ${path} must contain an object`);
+  }
+  const value = (parsed as Record<string, unknown>).requiredExtensions;
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || !entry.trim())) {
+    throw new Error(`Cannot enforce required subagent extensions: ${path}.requiredExtensions must contain non-empty strings`);
+  }
+  return [...new Set(value as string[])];
+}
+
+/** Resolve globally required extension paths relative to the Pi agent directory. */
+export function loadRequiredExtensionPaths(agentDir: string = getAgentDir()): string[] {
+  return readRequiredExtensions(globalPath(agentDir)).map((entry) => {
+    if (entry === "~" || entry.startsWith("~/")) return join(homedir(), entry.slice(2));
+    return isAbsolute(entry) ? entry : join(agentDir, entry);
+  });
 }
 
 /**
@@ -603,8 +679,22 @@ export function saveSettings(s: SubagentsSettings, cwd: string = process.cwd()):
   const project = projectPath(cwd);
   const path = existsSync(project) ? project : globalPath();
   try {
+    // The menu snapshot has no row for file-only settings; carry them over so
+    // changing an ordinary setting cannot silently drop them. A malformed file
+    // has nothing to carry (and must not turn the write into a failure).
+    let fileOnly: Pick<SubagentsFileSettings, "cacheRetention" | "requiredExtensions"> = {};
+    try {
+      if (existsSync(path)) {
+        const existing = sanitize(JSON.parse(readFileSync(path, "utf-8")));
+        fileOnly = {
+          ...(existing.cacheRetention !== undefined ? { cacheRetention: existing.cacheRetention } : {}),
+          ...(existing.requiredExtensions !== undefined ? { requiredExtensions: existing.requiredExtensions } : {}),
+        };
+      }
+    } catch { /* malformed file: write the snapshot as-is */ }
+    const payload = { ...s, ...fileOnly };
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify(s, null, 2), "utf-8");
+    writeFileSync(path, JSON.stringify(payload, null, 2), "utf-8");
     return true;
   } catch {
     return false;
@@ -620,6 +710,7 @@ export function applySettings(s: SubagentsSettings, appliers: SettingsAppliers):
   if (typeof s.maxConcurrentNested === "number") appliers.setMaxConcurrentNested(s.maxConcurrentNested);
   if (typeof s.defaultMaxTurns === "number") appliers.setDefaultMaxTurns(s.defaultMaxTurns);
   if (typeof s.graceTurns === "number") appliers.setGraceTurns(s.graceTurns);
+  if (typeof s.headlessWaitMinutes === "number") appliers.setHeadlessWaitMinutes(s.headlessWaitMinutes);
   if (typeof s.maxSubagentDepth === "number") appliers.setMaxSubagentDepth(s.maxSubagentDepth);
   if (typeof s.fallbackSubagent === "string") appliers.setFallbackSubagent(s.fallbackSubagent);
   if (s.defaultJoinMode) appliers.setDefaultJoinMode(s.defaultJoinMode);

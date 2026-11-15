@@ -47,6 +47,8 @@ export interface WorkflowToolDeps {
   setWorkflowsDisabledByCollision: () => void;
   isWorktreeIsolationEnabled: () => boolean;
   isSchedulingEnabled: () => boolean;
+  /** Track a detached run until it settles, for the headless drain. */
+  trackRun?: (run: Promise<void>) => void;
 }
 
 export function fleetWorkflows(workflowTasks: Map<string, WorkflowTask>): FleetWorkflow[] {
@@ -197,7 +199,13 @@ export function createWorkflowTool(deps: WorkflowToolDeps) {
     agentActivity,
     isWorktreeIsolationEnabled,
     isSchedulingEnabled,
+    trackRun,
   } = deps;
+  // A headless parent drains on this promise: it must outlive the tool call.
+  const startRun = (run: Promise<void>): Promise<void> => {
+    trackRun?.(run);
+    return run;
+  };
 
   const isolationGuideline = isWorktreeIsolationEnabled()
     ? `\n- Use isolation: "worktree" to give the agent its own git worktree (safe parallel file modifications); leave it unset, or pass "off", for none. The worktree is removed when the agent finishes; if it made changes, they are committed to a branch and the branch is named in the result.`
@@ -351,7 +359,7 @@ export function createWorkflowTool(deps: WorkflowToolDeps) {
       widget.update();
       fleet.update();
 
-      void runWorkflowTask(pi, ctx, manager, agentActivity, task).then(() => notifyWorkflowFinished(task, widget, fleet, outbox));
+      void startRun(runWorkflowTask(pi, ctx, manager, agentActivity, task).then(() => notifyWorkflowFinished(task, widget, fleet, outbox)));
 
       return {
         content: [{
@@ -432,6 +440,7 @@ export function runWorkflowFlag(
   fleet: FleetList,
   isWorkflowsEnabled: () => boolean,
   state: { workflowFlagHandled: boolean },
+  trackRun?: (run: Promise<void>) => void,
 ): void {
   if (state.workflowFlagHandled) return;
   const flag = pi.getFlag(WORKFLOW_FILE_FLAG);
@@ -480,7 +489,7 @@ export function runWorkflowFlag(
   fleet.update();
   report(`Running workflow ${meta.name}…`, "info");
 
-  void runWorkflowTask(pi, ctx, manager, agentActivity, task).then(() => {
+  const run = runWorkflowTask(pi, ctx, manager, agentActivity, task).then(() => {
     pi.appendEntry<WorkflowEntryData>(WORKFLOW_ENTRY_TYPE, workflowEntryData(task));
     pi.sendMessage({
       customType: "workflow-result",
@@ -490,4 +499,6 @@ export function runWorkflowFlag(
     widget.update();
     fleet.update();
   });
+  trackRun?.(run);
+  void run;
 }
