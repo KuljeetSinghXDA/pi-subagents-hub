@@ -13,7 +13,13 @@ check the entries below for behaviour changes.
 
 - **Nested background subagents notify their parent.** A child spawned with `run_in_background: true` now delivers a `<task-notification>` steering message to the owning parent when it settles, and a cleanly idle parent waits for its active background children instead of ending the run and aborting them; a parent that fails, is stopped, or hits its turn limit still stops its children. Nested spawns still default to foreground, so unqualified sub-tasks keep returning inline. ([#12](https://github.com/ahati/pi-subagents-hub/pull/12) — thanks [@KuljeetSinghXDA](https://github.com/KuljeetSinghXDA))
 
+### Changed
+
+- **A reopened agent keeps the model and thinking level it last ran with.** `Agent({ resume })`, an `@handle` after eviction, `/continue` and a workflow's `resume` now restore the saved selection instead of falling back to the parent session's model; the agent type's current pin is the fallback when the saved session records neither. Tools, system prompt and turn caps still follow the type's current definition. ([#13](https://github.com/ahati/pi-subagents-hub/pull/13) — thanks [@KuljeetSinghXDA](https://github.com/KuljeetSinghXDA))
+
 ### Fixed
+
+- **Every pause surface writes the same manifest, and a paused parent's nested background children are parked and restored with it.** `/agents pause`, the hub/fleet `p` key, `subagents:rpc:pause` and `/pause` now sync `PauseStore`; a paused parent's background descendants get their own rows, and `/continue` revives them under the parent's new id. The bulk pause path no longer passes the custom-agent reloader where the manifest sync belongs. ([#14](https://github.com/ahati/pi-subagents-hub/pull/14) — thanks [@KuljeetSinghXDA](https://github.com/KuljeetSinghXDA))
 
 - **The Agent Hub roster stays on the focused agent.** When entries shift — a nested child spawns, an agent resumes and moves in `startedAt` order, or a workflow expires — the highlight no longer lands on a different row than the transcript, and a focused agent that a filter hides highlights nothing rather than the row now at that index. ([#15](https://github.com/ahati/pi-subagents-hub/pull/15) — thanks [@KuljeetSinghXDA](https://github.com/KuljeetSinghXDA))
 
