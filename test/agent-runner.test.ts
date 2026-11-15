@@ -470,6 +470,35 @@ describe("agent-runner final output capture", () => {
     setUncutPromptProviders(DEFAULT_UNCUT_PROMPT_PROVIDERS);
   });
 
+  it("shapes a reopened prompt for the parent's provider until the saved model is restored", async () => {
+    const { inheritableParentPrompt } = await import("../src/prompts.js");
+    const { setUncutPromptProviders, DEFAULT_UNCUT_PROMPT_PROVIDERS } = await import("../src/runner/runner-settings.js");
+    setUncutPromptProviders(DEFAULT_UNCUT_PROMPT_PROVIDERS);
+
+    const { session } = createSession("RESUMED");
+    createAgentSession.mockResolvedValue({ session });
+    sessionManagerOpen.mockReturnValueOnce({
+      kind: "reopened-session-manager",
+      getHeader: () => ({ parentSession: "/sessions/parent.jsonl" }),
+      getCwd: () => "/child-cwd",
+      getBranch: () => [],
+    } as any);
+    vi.mocked(inheritableParentPrompt).mockClear();
+
+    // Legacy saved record: no modelId, nothing in the branch, so the run model
+    // resolves only after the session opens. The parent's bridge provider still
+    // decides that the prompt is projected uncut.
+    await runAgent(
+      { ...ctx, model: { provider: "claude-bridge", id: "claude-sonnet-4" } },
+      "Explore",
+      "task",
+      { pi, resumeSessionFile: "/sessions/explore.jsonl" },
+    );
+
+    expect(inheritableParentPrompt).not.toHaveBeenCalled();
+    setUncutPromptProviders(DEFAULT_UNCUT_PROMPT_PROVIDERS);
+  });
+
   it("suppresses AGENTS.md/CLAUDE.md/APPEND_SYSTEM.md for subagents", async () => {
     const { session } = createSession("ISOLATED");
     createAgentSession.mockResolvedValue({ session });

@@ -13,7 +13,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { Storage } from "@earendil-works/pi-durable";
 import type { NestedAgentManager } from "../nested-tools.js";
-import type { SubagentType, ThinkingLevel } from "../types.js";
+import type { EffectiveThinkingLevel, SubagentType } from "../types.js";
 import type { LifetimeUsage } from "../usage.js";
 import type { CompiledSchema } from "../workflow/json-schema.js";
 
@@ -83,14 +83,18 @@ export interface RunOptions {
   /** Storage backend for @earendil-works/pi-durable harness (defaults to MemoryStorage). */
   storage?: Storage;
   inheritContext?: boolean;
-  thinkingLevel?: ThinkingLevel;
+  thinkingLevel?: EffectiveThinkingLevel;
   /**
    * Reopen this pi session file rather than starting an empty conversation.
    * `createAgentSession` seeds itself from whatever its SessionManager holds,
    * so pointing it at an existing file rehydrates that agent's history and the
-   * prompt continues it. Everything else — tools, model, system prompt, turn
-   * caps — is still resolved from the agent type, so the continuation runs
-   * under the type's *current* definition, not the one the original run used.
+   * prompt continues it. Model and thinking level come from the saved
+   * selection — the record's last resolved values, else the session's own
+   * `model_change` / `thinking_level_change` — because a reopened conversation
+   * should keep running where it left off; the agent type's current pin is the
+   * fallback when the saved session records neither. Tools, system prompt and
+   * turn caps still resolve from the agent type, so those follow its *current*
+   * definition rather than the one the original run used.
    */
   resumeSessionFile?: string;
   /**

@@ -1,3 +1,4 @@
+import type { Model } from "@earendil-works/pi-ai";
 import { type AgentSession, defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type AgentManager, isTopLevelAgent } from "../agent-manager.js";
 import { AGENT_RECORD_ENTRY_TYPE, type AgentRecordEntryData, agentRecordEntryData, findAgentRecordEntry, reopenTarget } from "../agent-record-entry.js";
@@ -7,7 +8,7 @@ import { generateDockerName } from "../docker-names.js";
 import { buildDetails, createActivityTracker, formatLifetimeTokens, textResult } from "../entry/renderers.js";
 import { resolveAgentInvocationConfig, resolveJoinMode } from "../invocation-config.js";
 import { gateOf } from "../manager/manager-types.js";
-import { describeModel, resolveModel } from "../model-resolver.js";
+import { describeModel, findRegisteredModel, resolveModel } from "../model-resolver.js";
 import { checkModelScope } from "../model-scope.js";
 import { createOutputFilePath, ensureOutputFile, getOutputTranscriptDefault, streamToOutputFile, writeInitialEntry } from "../output-file.js";
 import type { SubagentScheduler } from "../schedule.js";
@@ -184,20 +185,14 @@ export function createAgentTool(deps: AgentToolDeps) {
         defaultRunInBackground: getBackgroundByDefault(),
       });
 
-      let model: any = reopenOptions !== undefined ? undefined : ctx.model;
+      let model: Model<any> | undefined = reopenOptions !== undefined ? undefined : ctx.model;
       if (reopenOptions !== undefined) {
-        if (saved?.modelId) {
-          const slash = saved.modelId.indexOf("/");
-          const exact = slash !== -1
-            ? ctx.modelRegistry?.find?.(saved.modelId.slice(0, slash), saved.modelId.slice(slash + 1))
-            : undefined;
-          if (exact) {
-            model = exact;
-          } else {
-            const resolved = resolveModel(saved.modelId, ctx.modelRegistry);
-            if (typeof resolved !== "string") model = resolved;
-          }
-        }
+        // The saved record's model wins over the parent's; fall back to the
+        // fuzzy resolver only when the exact id is no longer registered.
+        const savedModel = saved?.modelId === undefined
+          ? undefined
+          : findRegisteredModel(saved.modelId, ctx.modelRegistry) ?? resolveModel(saved.modelId, ctx.modelRegistry);
+        model = typeof savedModel === "string" ? undefined : savedModel;
       } else if (resolvedConfig.modelInput) {
         const resolved = resolveModel(resolvedConfig.modelInput, ctx.modelRegistry);
         if (typeof resolved === "string") {

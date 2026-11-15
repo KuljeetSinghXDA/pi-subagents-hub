@@ -65,8 +65,9 @@ import {
   createStructuredOutputTool,
   structuredRetryPrompt,
 } from "../structured-output.js";
-import type { AgentConfig, SubagentType } from "../types.js";
+import type { AgentConfig, EffectiveThinkingLevel, SubagentType } from "../types.js";
 import { clearDurableContextUsage, setDurableContextUsage } from "../usage.js";
+import { restoreBranchModel, restoreBranchThinkingLevel } from "./branch-selection.js";
 import { bridgePiToolToDurableTool } from "./durable-tool-bridge.js";
 import {
   extensionCanonicalNames,
@@ -587,43 +588,6 @@ function reopenSession(file: string, parentSessionFile: string | undefined, sess
   return SessionManager.forkFrom(file, opened.getCwd(), sessionDir, { parentSession: parentSessionFile });
 }
 
-function restoreBranchModel(branch: readonly any[], modelRegistry: any): any {
-  let lastChangeIdx = -1;
-  for (let i = branch.length - 1; i >= 0; i--) {
-    if (branch[i]?.type === "model_change") {
-      lastChangeIdx = i;
-      break;
-    }
-  }
-  const lastChange = lastChangeIdx >= 0 ? branch[lastChangeIdx] : undefined;
-  const changeModel = lastChange?.provider && lastChange?.modelId
-    ? modelRegistry?.find?.(lastChange.provider, lastChange.modelId)
-    : undefined;
-  // Virtual model_change entries outrank assistant message rows because
-  // assistant rows record the routed physical provider/model instead.
-  if (changeModel?.api === "pi-virtual") return changeModel;
-  for (let i = branch.length - 1; i > lastChangeIdx; i--) {
-    const entry = branch[i];
-    if (entry?.type === "message" && entry.message?.role === "assistant" && entry.message.api !== "pi-virtual") {
-      const msgModel = entry.message.provider && entry.message.model
-        ? modelRegistry?.find?.(entry.message.provider, entry.message.model)
-        : undefined;
-      if (msgModel) return msgModel;
-    }
-  }
-  return changeModel;
-}
-
-function restoreBranchThinkingLevel(branch: readonly any[]): string | undefined {
-  for (let i = branch.length - 1; i >= 0; i--) {
-    const entry = branch[i];
-    if (entry?.type === "thinking_level_change" && typeof entry.thinkingLevel === "string") {
-      return entry.thinkingLevel;
-    }
-  }
-  return undefined;
-}
-
 /**
  * SRP Phase 4: Session creation, extension binding, scope installation, and durable registry setup.
  */
@@ -631,8 +595,8 @@ async function createDurableRegistryAndSession(params: CreateSessionParams): Pro
   session: AgentSession;
   registry: Registry;
   toolsFilter?: { remove: readonly ToolRegistration[] };
-  model: any;
-  thinkingLevel: any;
+  model: Model<any> | undefined;
+  thinkingLevel: EffectiveThinkingLevel | undefined;
 }> {
   const {
     ctx, type, agentConfig, effectiveCwd, agentDir, loader, sessionSettingsManager,
@@ -653,8 +617,10 @@ async function createDurableRegistryAndSession(params: CreateSessionParams): Pro
         })
       : SessionManager.inMemory(effectiveCwd);
 
-  const branch = options.resumeSessionFile && typeof (sessionManager as any).getBranch === "function"
-    ? (sessionManager as any).getBranch() as readonly any[]
+  // Test doubles (and older managers) need not expose a branch; an empty one
+  // leaves the selection to `createAgentSession`.
+  const branch = options.resumeSessionFile !== undefined && typeof sessionManager.getBranch === "function"
+    ? sessionManager.getBranch()
     : [];
   const restoredModel = options.resumeSessionFile !== undefined
     ? (model ?? restoreBranchModel(branch, ctx.modelRegistry))
@@ -1486,7 +1452,7 @@ async function executeDurableAgentPrompt(
     conversation = await harness.root(baseContext, {
       agent: {
         model: modelRef,
-        thinkingLevel: (toolLoadout.thinkingLevel as any) ?? undefined,
+        thinkingLevel: toolLoadout.thinkingLevel ?? undefined,
         instructions: systemPrompt,
         // The observer supplies grace turns and aborts before hard-boundary tools.
         maxTurns: undefined,
@@ -1712,8 +1678,13 @@ export async function runAgent(
   const model = resolveRunModel(ctx, type, agentConfig, runSettingsManager, options);
 
   // 1. Prepare agent system prompt, memory, and skills
+  // A reopened session restores its own model from the saved branch only after
+  // the prompt exists. Until then the parent's provider is the only signal for
+  // provider-shaped prompts (claude-bridge needs the parent prompt verbatim),
+  // so a resume with no resolved model falls back to it as it did before.
+  const promptModel = model ?? (options.resumeSessionFile !== undefined ? ctx.model : undefined);
   const prepared = await prepareAgentSystemPrompt(
-    ctx, type, agentConfig, config, effectiveCwd, configCwd, model, options,
+    ctx, type, agentConfig, config, effectiveCwd, configCwd, promptModel, options,
   );
   const { systemPrompt, toolNames, noSkills } = prepared;
 

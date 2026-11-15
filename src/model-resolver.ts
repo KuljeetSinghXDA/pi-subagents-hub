@@ -33,6 +33,17 @@ export function describeModel(
 }
 
 /**
+ * Exact `provider/modelId` lookup with no availability filter. Reopening a
+ * saved record restores the model it actually ran on, which stays registered
+ * even while the provider is unauthenticated; the run itself reports that.
+ */
+export function findRegisteredModel(input: string, registry: ModelRegistry): any | undefined {
+  const slashIdx = input.indexOf("/");
+  if (slashIdx === -1) return undefined;
+  return registry.find(input.slice(0, slashIdx), input.slice(slashIdx + 1));
+}
+
+/**
  * Resolve a model string to a Model instance.
  * Tries exact match first ("provider/modelId"), then fuzzy match against all available models.
  * Returns the Model on success, or an error message string on failure.
@@ -46,14 +57,9 @@ export function resolveModel(
   const availableSet = new Set(all.map(m => `${m.provider}/${m.id}`.toLowerCase()));
 
   // 1. Exact match: "provider/modelId" — only if available (has auth)
-  const slashIdx = input.indexOf("/");
-  if (slashIdx !== -1) {
-    const provider = input.slice(0, slashIdx);
-    const modelId = input.slice(slashIdx + 1);
-    if (availableSet.has(input.toLowerCase())) {
-      const found = registry.find(provider, modelId);
-      if (found) return found;
-    }
+  if (availableSet.has(input.toLowerCase())) {
+    const found = findRegisteredModel(input, registry);
+    if (found) return found;
   }
 
   // 2. Fuzzy match against available models. Normalize separators so cosmetic
@@ -104,6 +110,7 @@ export function resolveModel(
   // named provider (exact or fuzzy above) retries against all providers. The
   // named provider is preferred when present; this only kicks in when it isn't,
   // so the same model from another provider beats falling back to "inherit".
+  const slashIdx = input.indexOf("/");
   if (slashIdx !== -1) {
     const bare = resolveModel(input.slice(slashIdx + 1), registry);
     if (typeof bare !== "string") return bare;
