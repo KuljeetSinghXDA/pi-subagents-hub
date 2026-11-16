@@ -419,8 +419,9 @@ export class SubagentScheduler {
       };
     }
     try {
-      // Croner validates by construction.
-      new Cron(expr, () => {});
+      // Croner validates by construction; pause and stop immediately so validation never leaves a live timer.
+      const probe = new Cron(expr, { paused: true }, () => {});
+      probe.stop();
       return { valid: true };
     } catch (e) {
       return { valid: false, error: e instanceof Error ? e.message : "Invalid cron expression" };
@@ -439,6 +440,8 @@ export class SubagentScheduler {
   static parseInterval(s: string): number | null {
     const m = s.match(/^(\d+)(s|m|h|d)$/);
     if (!m) return null;
-    return parseInt(m[1], 10) * { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[m[2] as "s" | "m" | "h" | "d"];
+    const value = parseInt(m[1], 10);
+    if (value <= 0) return null;
+    return value * { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[m[2] as "s" | "m" | "h" | "d"];
   }
 }

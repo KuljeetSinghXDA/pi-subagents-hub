@@ -607,4 +607,20 @@ describe("SubagentScheduler — >24.85-day timer overflow guard", () => {
       vi.useRealTimers();
     }
   });
+
+  it("validateCronExpression does not leave live Cron timers running", () => {
+    vi.useFakeTimers();
+    try {
+      expect(SubagentScheduler.validateCronExpression("* * * * * *").valid).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("parseInterval and detectSchedule reject zero-duration intervals", () => {
+    expect(SubagentScheduler.parseInterval("0s")).toBeNull();
+    expect(SubagentScheduler.parseInterval("0m")).toBeNull();
+    expect(() => SubagentScheduler.detectSchedule("0s")).toThrow(/Invalid schedule/);
+  });
 });
