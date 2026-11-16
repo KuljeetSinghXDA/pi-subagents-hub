@@ -350,12 +350,17 @@ export class AgentManager {
           record.invocation.isolation = "worktree";
 
           if (record.status !== "running") {
-            this.pool.releaseSlot(record);
-            await this.worktrees.cleanup(pi, baseCwd, record, {
-              description: options.description,
-              customCwd,
-            });
-            this.drainQueue();
+            this.pool.detachParentAbort(record);
+            cleanupRecordOutput(record);
+            try {
+              await this.worktrees.cleanup(pi, baseCwd, record, {
+                description: options.description,
+                customCwd,
+              });
+            } catch (cleanupError) {
+              console.error("[pi-subagents-hub] worktree cleanup failed:", cleanupError);
+            }
+            this.settleRun(record);
             return;
           }
         }

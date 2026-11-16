@@ -3284,4 +3284,79 @@ describe("AgentManager — spawnPrompt (ephemeral respawn recipe)", () => {
     await record.promise;
     expect(record.spawnPrompt).toBe("original task");
   });
+
+  it("settles record and detaches parent signal when aborted during worktree setup", async () => {
+    const onComplete = vi.fn();
+    manager = new AgentManager(onComplete, 1);
+
+    let resolveBlocker!: (v: any) => void;
+    vi.mocked(runAgent).mockImplementationOnce(() => new Promise(r => { resolveBlocker = r; }) as any);
+    const blockerId = manager.spawn(mockPi, mockCtx, "general-purpose", "blocker", {
+      description: "blocker",
+      isBackground: true,
+    });
+
+    type Wt = { path: string; branch: string; baseSha: string; workPath: string };
+    let resolveSetup!: (v: Wt) => void;
+    vi.mocked(createWorktree).mockImplementationOnce(() => new Promise<Wt>(r => { resolveSetup = r; }));
+
+    const parentController = new AbortController();
+    const removeSpy = vi.spyOn(parentController.signal, "removeEventListener");
+
+    const id = manager.spawn(mockPi, mockCtx, "general-purpose", "worktree task", {
+      description: "wt-abort",
+      isBackground: true,
+      isolation: "worktree",
+      signal: parentController.signal,
+    });
+    const record = manager.getRecord(id)!;
+    expect(record.status).toBe("queued");
+
+    // Finish blocker so the queued worktree agent launches and blocks on createWorktree.
+    resolveBlocker({ responseText: "done", session: mockSession(), aborted: false, steered: false });
+    await manager.getRecord(blockerId)!.promise;
+    expect(record.status).toBe("running");
+
+    // Abort while createWorktree is still pending.
+    expect(manager.abort(id)).toBe(true);
+    expect(record.status).toBe("stopped");
+
+    resolveSetup({
+      path: "/tmp/wt-early-abort",
+      branch: "pi-agent-early",
+      baseSha: "abc123",
+      workPath: "/tmp/wt-early-abort",
+    });
+    await manager.awaitStartup(id);
+
+    expect(onComplete).toHaveBeenCalledTimes(2);
+    expect(onComplete).toHaveBeenLastCalledWith(record);
+    expect(record.blocking).toBe(false);
+    expect((manager as any).runningBackground).toBe(0);
+    expect(removeSpy).toHaveBeenCalledTimes(1);
+
+    // Also verify foreground spawnAndWait marks resultConsumed and clears blocking.
+    vi.mocked(createWorktree).mockImplementationOnce(
+      () => new Promise(resolve => {
+        queueMicrotask(() => {
+          const fg = manager.listAgents().find(a => a.description === "wt-fg-abort");
+          if (fg) manager.abort(fg.id);
+          resolve({
+            path: "/tmp/wt-fg-abort",
+            branch: "pi-agent-fg",
+            baseSha: "abc123",
+            workPath: "/tmp/wt-fg-abort",
+          });
+        });
+      }),
+    );
+    const { record: fgRecord } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "fg wt", {
+      description: "wt-fg-abort",
+      isolation: "worktree",
+    });
+    expect(fgRecord.status).toBe("stopped");
+    expect(fgRecord.blocking).toBe(false);
+    expect(fgRecord.resultConsumed).toBe(true);
+    expect(onComplete).toHaveBeenCalledTimes(3);
+  });
 });
