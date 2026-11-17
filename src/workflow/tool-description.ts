@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 /**
  * tool-description.ts — the model-facing description of the `SubagentWorkflow` tool.
  *
@@ -45,8 +47,17 @@
  * `agent()` option set, the `resume` exclusions, the effort levels, the caps,
  * and that every example here uses options the runtime actually accepts.
  */
-export const fullWorkflowToolDescription = `Execute a workflow script that orchestrates multiple subagents deterministically. Workflows run in the background — this tool returns immediately with a task ID, and you are notified when the workflow completes. Use /agents → Workflows to watch live progress.
+export const workflowToolHeader = `Execute a workflow script that orchestrates multiple subagents deterministically. Workflows run in the background — this tool returns immediately with a task ID, and you are notified when the workflow completes. Use /agents → Workflows to watch live progress.`;
 
+/**
+ * The script-writing reference: hooks, options, patterns, resume.
+ *
+ * Inlined into the tool description by default, and shipped verbatim as
+ * `skills/workflow-authoring/SKILL.md` for `workflowReference: "skill"`. Keeping the
+ * reference here and the skill a rendered copy of it is why the setting can swap
+ * one for the other without the two drifting into different instructions.
+ */
+export const workflowReferenceBody = `
 A workflow structures work across many agents — to be comprehensive (decompose and cover in parallel), to be confident (independent perspectives and adversarial checks before committing), or to take on scale one context can't hold (migrations, audits, broad sweeps). The script is where you encode that structure: what fans out, what verifies, what synthesizes.
 
 ONLY call this tool when the user has explicitly opted into multi-agent orchestration. Workflows can spawn dozens of agents and consume a large amount of tokens; the user must request that scale, not have it inferred. Explicit opt-in means one of:
@@ -208,3 +219,39 @@ Use this tool for multi-step orchestration where control flow should be determin
 ## Resume
 
 The tool result includes a runId. To resume after a pause, kill, or script edit, relaunch with SubagentWorkflow({scriptPath, resumeFromRunId}). Successful calls match by structural position: each parallel thunk, each pipeline item's full stage chain, and each nested workflow body numbers its own calls, so different completion order does not lose cache hits. At the first missing, edited, failed or invalid call, replay stops for the WHOLE run; every subsequent call runs live, including unchanged siblings and parents that may read changed files. This caches answers only — it does not rerun tools, restore files, or recheck gates. Start a fresh run after external inputs, workspace state or agent definitions change. Journals without structural paths are not replayed. Same session only, and the run must have finished — stop it from /agents → Workflows first. Before diagnosing an empty or unexpected result, Read the run's \`<run id>.workflow.jsonl\` beside its script; do not assume cached results are non-empty. A run that used agent({ resume }) cannot replay because cached text leaves no live conversation to continue. Date.now()/Math.random()/new Date() are unavailable in scripts (they would break this) — stamp results after the workflow returns, or pass timestamps via args.`;
+
+export const fullWorkflowToolDescription = `${workflowToolHeader}\n${workflowReferenceBody}`;
+
+/** Which form the reference takes in the tool description. */
+export type WorkflowReferenceMode = "inline" | "skill";
+
+/** The shipped skill, resolved from this module: `src/workflow/` → `skills/`. */
+export const WORKFLOW_SKILL_PATH = fileURLToPath(new URL("../../skills/workflow-authoring/SKILL.md", import.meta.url));
+
+/**
+ * Where the script-writing reference lives.
+ *
+ * "inline" (the default) keeps it in the tool description: the model reads it
+ * before deciding to call the tool, and a pointer would cost a round trip.
+ * "skill" swaps in a line naming the shipped skill instead, for a session that
+ * would rather carry the roster in the skill list — pi lists every declared
+ * skill, so the model can load it on demand.
+ *
+ * Module state, read when the tool is registered, because the description is
+ * built once at registration. A change applies on the next pi session.
+ */
+let workflowReference: WorkflowReferenceMode = "inline";
+
+export function getWorkflowReference(): WorkflowReferenceMode { return workflowReference; }
+export function setWorkflowReference(mode: WorkflowReferenceMode): void { workflowReference = mode; }
+
+/** The line that stands in for the reference when the skill carries it. */
+export const pointerWorkflowReference =
+  `Before writing a script, load the \`workflow-authoring\` skill (read \`${WORKFLOW_SKILL_PATH}\`) — `
+  + "the workflow authoring reference: script API and gotchas, resume, quality patterns, worked examples.";
+
+/** The tool description, with the reference inlined or pointed at. Read at registration. */
+export function workflowToolDescription(): string {
+  return `${workflowToolHeader}\n${workflowReference === "skill" ? pointerWorkflowReference : workflowReferenceBody}`;
+}
+

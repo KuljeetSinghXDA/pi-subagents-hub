@@ -31,7 +31,7 @@ import {
   workflowResultText,
   workflowRunId,
 } from "../workflow/task.js";
-import { fullWorkflowToolDescription } from "../workflow/tool-description.js";
+import { workflowToolDescription } from "../workflow/tool-description.js";
 import { buildCompactTypeListText, buildTypeListText } from "./agent-tool-schema.js";
 
 export interface WorkflowToolDeps {
@@ -235,7 +235,7 @@ export function createWorkflowTool(deps: WorkflowToolDeps) {
   return defineTool({
     name: SUBAGENT_TOOL_NAMES.WORKFLOW,
     label: "SubagentWorkflow",
-    description: renderToolDescriptionTemplate(fullWorkflowToolDescription),
+    description: renderToolDescriptionTemplate(workflowToolDescription()),
     promptSnippet: "Run a deterministic script that orchestrates many subagents",
     promptGuidelines: [
       "Prefer `pipeline` over `parallel` — a barrier costs wall-clock whenever the stages are unevenly sized.",

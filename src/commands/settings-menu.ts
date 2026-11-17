@@ -105,6 +105,8 @@ export interface SettingsMenuDeps {
   setSchedulingEnabled: (b: boolean) => void;
   setDisableDefaultAgents: (b: boolean) => void;
   getToolDescriptionMode: () => ToolDescriptionMode;
+  getWorkflowReference: () => "inline" | "skill";
+  setWorkflowReference: (mode: "inline" | "skill") => void;
   setToolDescriptionMode: (m: ToolDescriptionMode) => void;
   /** The active session's project root: where this menu reads and writes settings. */
   getConfigCwd: () => string;
@@ -130,6 +132,7 @@ function snapshotSettings(deps: SettingsMenuDeps) {
     strictAgentFiles: deps.getStrictAgentFiles(),
     disableDefaultAgents: isDefaultsDisabled(),
     toolDescriptionMode: deps.getToolDescriptionMode(),
+    workflowReference: deps.getWorkflowReference(),
     fleetView: deps.isFleetViewEnabled(),
     agentMentions: deps.getAgentMentionMode(),
     rememberAgents: getRememberAgents(),
@@ -234,6 +237,8 @@ export async function showSettings(ctx: ExtensionCommandContext, deps: SettingsM
     setSchedulingEnabled,
     setDisableDefaultAgents,
     getToolDescriptionMode,
+    getWorkflowReference,
+    setWorkflowReference,
     setToolDescriptionMode,
   } = deps;
 
@@ -296,6 +301,13 @@ export async function showSettings(ctx: ExtensionCommandContext, deps: SettingsM
         description: `pi -p: minutes to wait for background work before stopping it (0 = no limit, max ${MAX_HEADLESS_WAIT_MINUTES}, Enter to type)`,
         currentValue: String(getHeadlessWaitMinutes()),
         values: [String(getHeadlessWaitMinutes())],
+      },
+      {
+        id: "workflowReference",
+        label: "Workflow reference",
+        description: "inline = the script-writing reference lives in the SubagentWorkflow description; skill = it ships as the workflow-authoring skill and the description points at it",
+        currentValue: getWorkflowReference(),
+        values: ["inline", "skill"],
       },
       {
         id: "joinMode",
@@ -532,6 +544,16 @@ export async function showSettings(ctx: ExtensionCommandContext, deps: SettingsM
           deps,
         );
       }
+    } else if (id === "workflowReference") {
+      const mode = value === "skill" ? "skill" : "inline";
+      setWorkflowReference(mode);
+      notifyApplied(
+        ctx,
+        mode === "skill"
+          ? "Workflow reference moved to the workflow-authoring skill (applies on the next pi session)"
+          : "Workflow reference inlined in the tool description (applies on the next pi session)",
+        deps,
+      );
     } else if (id === "joinMode") {
       setDefaultJoinMode(value as JoinMode);
       notifyApplied(ctx, `Default join mode set to ${value}`, deps);

@@ -29,6 +29,8 @@ check the entries below for behaviour changes.
 
 - **Workflow scripts can narrow a child's tools with `agent({ disallowedTools })`.** The list adds to the agent type's own `disallowed_tools` for that one child, in Claude Code's or pi's spelling (`Bash` and `bash` deny the same tool), and is refused alongside `resume` — a resumed child keeps the tool contract it was started with. ([tintinweb/pi-subagents#455](https://github.com/tintinweb/pi-subagents/pull/455) — thanks [@tintinweb](https://github.com/tintinweb))
 
+- **The workflow script-writing reference can ship as a skill instead of living in the tool description.** `workflowReference: "skill"` moves it into the `workflow-authoring` skill (declared in the package's `pi.skills`, loadable as `/skill:workflow-authoring`) and leaves the description pointing at it; `"inline"` is the default and keeps today's behavior. The text lives in exactly one of the two, so choosing the skill does not duplicate it. ([tintinweb/pi-subagents#455](https://github.com/tintinweb/pi-subagents/pull/455) — thanks [@tintinweb](https://github.com/tintinweb))
+
 ### Changed
 
 - **A reopened agent keeps the model and thinking level it last ran with.** `Agent({ resume })`, an `@handle` after eviction, `/continue` and a workflow's `resume` now restore the saved selection instead of falling back to the parent session's model; the agent type's current pin is the fallback when the saved session records neither. Tools, system prompt and turn caps still follow the type's current definition. ([#13](https://github.com/ahati/pi-subagents-hub/pull/13) — thanks [@KuljeetSinghXDA](https://github.com/KuljeetSinghXDA))

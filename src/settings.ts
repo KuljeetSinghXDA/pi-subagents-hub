@@ -139,6 +139,13 @@ export interface SubagentsSettings {
    */
   toolDescriptionMode?: ToolDescriptionMode;
   /**
+   * Where the workflow script-writing reference lives: `"inline"` (default)
+   * keeps it in the `SubagentWorkflow` tool description, `"skill"` points at
+   * the shipped `workflow-authoring` skill instead. Read once at tool
+   * registration, so a change applies on the next pi session.
+   */
+  workflowReference?: "inline" | "skill";
+  /**
    * Whether the Claude Code-style FleetView (the navigable main+subagents list
    * rendered below the editor) is shown. Defaults to `true`. Pure-UI: when off,
    * the list never registers and the global key handler never captures input.
@@ -424,6 +431,7 @@ export interface SettingsAppliers {
   setStrictAgentFiles: (b: boolean) => void;
   setDisableDefaultAgents: (b: boolean) => void;
   setToolDescriptionMode: (mode: ToolDescriptionMode) => void;
+  setWorkflowReference: (mode: "inline" | "skill") => void;
   setFleetView: (b: boolean) => void;
   setAgentMentions: (mode: AgentMentionMode) => void;
   setRememberAgents: (b: boolean) => void;
@@ -569,6 +577,9 @@ function sanitize(raw: unknown): SubagentsFileSettings {
   }
   if (typeof r.toolDescriptionMode === "string" && VALID_TOOL_DESCRIPTION_MODES.has(r.toolDescriptionMode)) {
     out.toolDescriptionMode = r.toolDescriptionMode as ToolDescriptionMode;
+  }
+  if (r.workflowReference === "inline" || r.workflowReference === "skill") {
+    out.workflowReference = r.workflowReference;
   }
   if (typeof r.fleetView === "boolean") {
     out.fleetView = r.fleetView;
@@ -762,6 +773,7 @@ export function applySettings(s: SubagentsSettings, appliers: SettingsAppliers):
   if (typeof s.strictAgentFiles === "boolean") appliers.setStrictAgentFiles(s.strictAgentFiles);
   if (typeof s.disableDefaultAgents === "boolean") appliers.setDisableDefaultAgents(s.disableDefaultAgents);
   if (s.toolDescriptionMode) appliers.setToolDescriptionMode(s.toolDescriptionMode);
+  if (s.workflowReference) appliers.setWorkflowReference(s.workflowReference);
   if (typeof s.fleetView === "boolean") appliers.setFleetView(s.fleetView);
   if (s.agentMentions) appliers.setAgentMentions(s.agentMentions);
   if (typeof s.rememberAgents === "boolean") appliers.setRememberAgents(s.rememberAgents);

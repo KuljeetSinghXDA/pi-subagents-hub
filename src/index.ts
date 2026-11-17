@@ -141,6 +141,7 @@ import {
   resumeWorkflowTask,
   type WorkflowTask,
 } from "./workflow/task.js";
+import { getWorkflowReference, setWorkflowReference } from "./workflow/tool-description.js";
 import {
   isWorktreeIsolationEnabled,
   setWorktreeIsolationEnabled,
@@ -442,6 +443,7 @@ export default function (pi: ExtensionAPI) {
     setStrictAgentFiles: (b) => { strictAgentFiles = b; },
     setDisableDefaultAgents,
     setToolDescriptionMode,
+    setWorkflowReference,
     setFleetView: setFleetViewEnabled,
     setAgentMentions: setAgentMentionMode,
     setRememberAgents,
@@ -695,6 +697,8 @@ export default function (pi: ExtensionAPI) {
     setDisableDefaultAgents,
     getToolDescriptionMode,
     setToolDescriptionMode,
+    getWorkflowReference,
+    setWorkflowReference,
     getConfigCwd: configCwd,
   };
 

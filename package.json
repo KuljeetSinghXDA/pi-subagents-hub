@@ -69,6 +69,9 @@
     "extensions": [
       "./dist/index.js"
     ],
+    "skills": [
+      "./skills"
+    ],
     "image": "https://github.com/ahati/pi-subagents-hub/raw/master/media/Screenshot-Hub-FC.png"
   }
 }

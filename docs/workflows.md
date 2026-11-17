@@ -255,6 +255,8 @@ Spawns one subagent and resolves to its final text — or, with `schema`, to a v
 | `resume` | string | Continue the child that ran under that label instead of starting fresh |
 | `schema` | object | A JSON Schema with an object root. Resolves to the validated object instead of text. Checked against draft-07 before anything spawns, and refused when no value could satisfy it — see the troubleshooting entry |
 
+The reference above — hooks, options, patterns, resume — is part of the `SubagentWorkflow` description by default. With `workflowReference: "skill"` it ships as the `workflow-authoring` skill instead and the description only points at it; the text lives in exactly one of the two, never both.
+
 Any other key is rejected **by name** at the call. Note that this checks option *keys*, not option *values* — an `agentType` that names no known agent falls back to `general-purpose` silently.
 
 Combination rules: `resume` cannot be combined with `agentType`, `model`, `effort`, `disallowedTools`, `isolation`, `gate` or `schema` — a resumed child keeps the agent type, model and tree it was started with, and its session predates the `StructuredOutput` tool.
