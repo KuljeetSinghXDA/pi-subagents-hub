@@ -134,7 +134,7 @@ describe("headless drain at agent_before_settle", () => {
     const { booted, context, settle } = await boot("print", { headlessWaitMinutes: 1 });
     const id = await spawnBackground(booted, context);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
 
     const result = settle();
     await vi.advanceTimersByTimeAsync(60_000);
@@ -158,7 +158,7 @@ describe("headless drain at agent_before_settle", () => {
     expect(record(id).status).toBe("running");
     expect((globalThis as any)[Symbol.for("pi-subagents:manager")].hasRunning()).toBe(true);
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
 
     let settled = false;
     void settle().then(() => { settled = true; });
@@ -175,7 +175,7 @@ describe("headless drain at agent_before_settle", () => {
     setHeadlessWaitMinutes(40_000); // > 24.85 days (2^31 - 1 ms)
     const id = await spawnBackground(booted, context);
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
 
     let settled = false;
     void settle().then(() => { settled = true; });

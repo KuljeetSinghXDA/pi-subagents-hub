@@ -95,7 +95,7 @@ import {
   setPackageAgentsGate,
   setPackageWorkflowsGate,
 } from "./package-resources.js";
-import { SubagentScheduler } from "./schedule.js";
+import { SubagentScheduler, setLongTimeout } from "./schedule.js";
 import {
   applyAndEmitLoaded,
   loadSettings,
@@ -596,27 +596,10 @@ export default function (pi: ExtensionAPI) {
       `[pi-subagents] Waiting for background work to finish (${describeBackgroundWork()}). Press Ctrl+C to exit now.\n`,
     );
     const headlessWaitMinutes = getHeadlessWaitMinutes();
-    const MAX_TIMEOUT_MS = 2_147_483_647;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let ceilingCancelled = false;
+    let cancelCeiling: (() => void) | undefined;
     const ceiling = headlessWaitMinutes > 0
       ? new Promise<"ceiling">(resolve => {
-          let remaining = headlessWaitMinutes * 60_000;
-          const arm = () => {
-            if (ceilingCancelled) return;
-            if (remaining <= 0) {
-              resolve("ceiling");
-              return;
-            }
-            const delay = Math.min(MAX_TIMEOUT_MS, remaining);
-            timer = setTimeout(() => {
-              remaining -= delay;
-              if (ceilingCancelled) return;
-              if (remaining > 0) arm();
-              else resolve("ceiling");
-            }, delay);
-          };
-          arm();
+          cancelCeiling = setLongTimeout(headlessWaitMinutes * 60_000, () => resolve("ceiling"));
         })
       : undefined;
     try {
@@ -637,8 +620,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
     } finally {
-      ceilingCancelled = true;
-      clearTimeout(timer);
+      cancelCeiling?.();
     }
     const message = outbox.take();
     if (!message) return;

@@ -49,6 +49,7 @@ import {
 } from "../package-resources.js";
 import type { SubagentScheduler } from "../schedule.js";
 import {
+  MAX_HEADLESS_WAIT_MINUTES,
   type SubagentsSettings,
   saveAndEmitChanged,
   type ToolDescriptionMode,
@@ -292,7 +293,7 @@ export async function showSettings(ctx: ExtensionCommandContext, deps: SettingsM
       {
         id: "headlessWaitMinutes",
         label: "Headless wait (min)",
-        description: "pi -p: minutes to wait for background work before stopping it (0 = no limit, Enter to type)",
+        description: `pi -p: minutes to wait for background work before stopping it (0 = no limit, max ${MAX_HEADLESS_WAIT_MINUTES}, Enter to type)`,
         currentValue: String(getHeadlessWaitMinutes()),
         values: [String(getHeadlessWaitMinutes())],
       },
@@ -509,13 +510,15 @@ export async function showSettings(ctx: ExtensionCommandContext, deps: SettingsM
       }
     } else if (id === "headlessWaitMinutes") {
       const n = parseInt(value, 10);
-      if (n >= 0) {
+      if (n >= 0 && n <= MAX_HEADLESS_WAIT_MINUTES) {
         setHeadlessWaitMinutes(n);
         notifyApplied(
           ctx,
           n === 0 ? "Headless wait set to no limit" : `Headless wait set to ${n} min`,
           deps,
         );
+      } else {
+        ctx.ui.notify(`Headless wait must be 0-${MAX_HEADLESS_WAIT_MINUTES} minutes`, "warning");
       }
     } else if (id === "maxSubagentDepth") {
       const n = parseInt(value, 10);

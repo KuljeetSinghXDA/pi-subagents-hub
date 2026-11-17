@@ -459,6 +459,8 @@ const MAX_CONCURRENT_CEILING = 1024;
 const MAX_TURNS_CEILING = 10_000;
 const GRACE_TURNS_CEILING = 1_000;
 const SUBAGENT_DEPTH_CEILING = 16;
+/** Upper bound for `headlessWaitMinutes`: one day. */
+export const MAX_HEADLESS_WAIT_MINUTES = 24 * 60;
 
 /**
  * Normalize a package gate: a boolean passes through, an array is trimmed to its
@@ -536,7 +538,7 @@ function sanitize(raw: unknown): SubagentsFileSettings {
   if (
     Number.isInteger(r.headlessWaitMinutes) &&
     (r.headlessWaitMinutes as number) >= 0 &&
-    (r.headlessWaitMinutes as number) <= 24 * 60
+    (r.headlessWaitMinutes as number) <= MAX_HEADLESS_WAIT_MINUTES
   ) {
     out.headlessWaitMinutes = r.headlessWaitMinutes as number;
   }

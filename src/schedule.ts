@@ -26,7 +26,39 @@ import type { ScheduleStore } from "./schedule-store.js";
 import type { IsolationMode, ScheduledSubagent, SubagentType, ThinkingLevel } from "./types.js";
 
 /** Node.js timers clamp delays above 2^31 - 1 ms to 1 ms, firing immediately. */
-const MAX_TIMEOUT_MS = 2_147_483_647;
+export const MAX_TIMEOUT_MS = 2_147_483_647;
+
+/**
+ * Arm `cb` after `ms`, hopping through delays of at most MAX_TIMEOUT_MS so a
+ * longer wait is not clamped to 1 ms and fired at once. The target is absolute,
+ * so a hop that fires late shortens the next one instead of lengthening the
+ * total wait. Returns a cancel function that also disarms a pending hop.
+ */
+export function setLongTimeout(ms: number, cb: () => void): () => void {
+  const target = Date.now() + ms;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancelled = false;
+  const arm = (): void => {
+    if (cancelled) return;
+    const remaining = target - Date.now();
+    if (remaining <= 0) {
+      cb();
+      return;
+    }
+    timer = setTimeout(() => {
+      timer = undefined;
+      if (cancelled) return;
+      if (Date.now() < target) arm();
+      else cb();
+    }, Math.min(MAX_TIMEOUT_MS, remaining));
+  };
+  arm();
+  return () => {
+    cancelled = true;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+}
 
 /** Event emitted on `pi.events` for cross-extension consumers. */
 export type ScheduleChangeEvent =
@@ -52,7 +84,7 @@ export interface NewJobInput {
 
 export class SubagentScheduler {
   private jobs = new Map<string, Cron>();
-  private intervals = new Map<string, NodeJS.Timeout>();
+  private intervals = new Map<string, () => void>();
   private store: ScheduleStore | undefined;
   private pi: ExtensionAPI | undefined;
   private ctx: ExtensionContext | undefined;
@@ -74,7 +106,7 @@ export class SubagentScheduler {
   stop(): void {
     for (const cron of this.jobs.values()) cron.stop();
     this.jobs.clear();
-    for (const t of this.intervals.values()) clearTimeout(t);
+    for (const cancel of this.intervals.values()) cancel();
     this.intervals.clear();
     this.store = undefined;
     this.pi = undefined;
@@ -170,25 +202,16 @@ export class SubagentScheduler {
   // ── Scheduling primitives ────────────────────────────────────────────
 
   /**
-   * Arm `onFire` at `target`, hopping through `setTimeout` chunks of at most
-   * MAX_TIMEOUT_MS. An un-chunked delay above that bound is clamped to 1 ms by
-   * Node and fires the job immediately. Only the latest handle is tracked, so
-   * `unscheduleJob` cancels the live hop.
+   * Arm `onFire` at `target` through `setLongTimeout`, so a delay above
+   * MAX_TIMEOUT_MS is hopped instead of clamped to 1 ms. Only the latest
+   * cancel handle is tracked, so `unscheduleJob` cancels the live hop.
    */
   private armAt(jobId: string, target: number, onFire: () => void): void {
-    const arm = (): void => {
-      const delay = Math.min(MAX_TIMEOUT_MS, Math.max(1, target - Date.now()));
-      const timer = setTimeout(() => {
-        if (!this.store || this.intervals.get(jobId) !== timer) return;
-        if (Date.now() < target) {
-          arm();
-          return;
-        }
-        onFire();
-      }, delay);
-      this.intervals.set(jobId, timer);
-    };
-    arm();
+    const cancel = setLongTimeout(Math.max(1, target - Date.now()), () => {
+      if (!this.store || this.intervals.get(jobId) !== cancel) return;
+      onFire();
+    });
+    this.intervals.set(jobId, cancel);
   }
 
   private armLongInterval(jobId: string, intervalMs: number, nextAt: number): void {
@@ -222,7 +245,7 @@ export class SubagentScheduler {
           this.armLongInterval(job.id, job.intervalMs, Date.now() + job.intervalMs);
         } else {
           const t = setInterval(() => this.executeJob(job.id), job.intervalMs);
-          this.intervals.set(job.id, t);
+          this.intervals.set(job.id, () => clearInterval(t));
         }
       } else if (job.scheduleType === "once") {
         const target = new Date(job.schedule).getTime();
@@ -249,10 +272,9 @@ export class SubagentScheduler {
       cron.stop();
       this.jobs.delete(id);
     }
-    const t = this.intervals.get(id);
-    if (t) {
-      clearTimeout(t);
-      clearInterval(t);
+    const cancel = this.intervals.get(id);
+    if (cancel) {
+      cancel();
       this.intervals.delete(id);
     }
   }
