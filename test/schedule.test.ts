@@ -609,6 +609,56 @@ describe("SubagentScheduler — >24.85-day timer overflow guard", () => {
   });
 });
 
+describe("SubagentScheduler — cron validation leaves no timer", () => {
+  it("validateCronExpression does not leave live Cron timers running", () => {
+    vi.useFakeTimers();
+    try {
+      expect(SubagentScheduler.validateCronExpression("* * * * * *").valid).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("SubagentScheduler — zero-duration and overflowing schedules", () => {
+  it("parseInterval and detectSchedule reject zero-duration intervals", () => {
+    expect(SubagentScheduler.parseInterval("0s")).toBeNull();
+    expect(SubagentScheduler.parseInterval("0m")).toBeNull();
+    expect(() => SubagentScheduler.detectSchedule("0s")).toThrow(/Invalid schedule/);
+  });
+
+  it("parseRelativeTime and detectSchedule reject a zero-duration relative time", () => {
+    expect(SubagentScheduler.parseRelativeTime("+0s")).toBeNull();
+    expect(SubagentScheduler.parseRelativeTime("+0d")).toBeNull();
+    expect(() => SubagentScheduler.detectSchedule("+0s")).toThrow(/Invalid schedule/);
+  });
+
+  it("rejects interval and relative products above Number.MAX_SAFE_INTEGER", () => {
+    expect(SubagentScheduler.parseInterval("99999999999999d")).toBeNull();
+    expect(SubagentScheduler.parseRelativeTime("+99999999999999d")).toBeNull();
+    expect(() => SubagentScheduler.detectSchedule("99999999999999d")).toThrow(/Invalid schedule/);
+  });
+
+  it("addJob throws on a zero-duration interval without storing the job", () => {
+    const dir = mkdtempSync(join(tmpdir(), "schedule-zero-test-"));
+    try {
+      const store = new ScheduleStore(join(dir, "s.json"));
+      const scheduler = new SubagentScheduler();
+      scheduler.start(makeMockPi(), makeMockCtx(), makeMockManager(), store);
+
+      expect(() => scheduler.addJob({
+        name: "zero", description: "x", schedule: "0s",
+        subagent_type: "general-purpose", prompt: "p",
+      })).toThrow(/Invalid schedule/);
+      expect(scheduler.list()).toEqual([]);
+      scheduler.stop();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("setLongTimeout", () => {
   afterEach(() => {
     vi.useRealTimers();
