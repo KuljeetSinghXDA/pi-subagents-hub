@@ -11,6 +11,7 @@ import {
   gerund,
   header,
   isLive,
+  phaseLabel,
   sizeWarning,
   stats,
   type WorkflowAgentEntry,
@@ -137,6 +138,32 @@ describe("currentPhaseIndex", () => {
 
   it("marks the opening phase before anything starts", () => {
     expect(currentPhaseIndex(buildPhaseGroups([]))).toBe(0);
+  });
+});
+
+describe("phaseLabel", () => {
+  const group = (title: string, status: "not-started" | "running" | "done" | "failed") => ({
+    title,
+    status,
+    agents: [],
+    doneCount: 0,
+    totalCount: 0,
+    tokens: 0,
+    durationMs: 0,
+  });
+
+  it("names the running phase with its position in the run", () => {
+    expect(phaseLabel([group("Scan", "done"), group("Fix", "running"), group("Verify", "not-started")]))
+      .toBe("Fixing (2/3)");
+  });
+
+  it("joins two in-flight phases, as a pipeline with two stages has", () => {
+    expect(phaseLabel([group("Fix", "running"), group("Verify", "running")])).toBe("Fixing & Verifying");
+  });
+
+  it("is empty when nothing is running", () => {
+    expect(phaseLabel([])).toBe("");
+    expect(phaseLabel([group("Scan", "done"), group("Fix", "failed")])).toBe("");
   });
 });
 

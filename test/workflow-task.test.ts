@@ -241,6 +241,26 @@ describe("updateWorkflowProgressBatch", () => {
     expect(task.doneCount).toBe(2);
   });
 
+  it("caches the run's active phase for the fleet row", () => {
+    // The fleet list reads this five times a second; deriving it there would
+    // rebuild the phase groups from the whole log on every tick.
+    const task = createWorkflowTask({ id: "wf-phase", script: "" });
+    updateWorkflowProgressBatch(task, [
+      { type: "workflow_phase", index: 0, title: "Scan" },
+      { type: "workflow_phase", index: 1, title: "Fix" },
+      { type: "workflow_agent", index: 0, label: "a0", phaseIndex: 0, state: "done", tokens: 1 },
+      { type: "workflow_agent", index: 1, label: "a1", phaseIndex: 1, state: "start", queuedAt: 1 },
+    ]);
+
+    expect(task.phaseLabel).toBe("Fixing (2/2)");
+
+    updateWorkflowProgressBatch(task, [
+      { type: "workflow_agent", index: 1, label: "a1", phaseIndex: 1, state: "done", tokens: 2 },
+    ]);
+    // Nothing running any more: the row falls back to its counts.
+    expect(task.phaseLabel).toBe("");
+  });
+
   it("replaces in place, so the log keeps first-emission order and the slots stay valid", () => {
     const task = createWorkflowTask({ id: "wf-2", script: "" });
     updateWorkflowProgressBatch(task, [agent(1, "start", 5), agent(0, "start", 7)]);

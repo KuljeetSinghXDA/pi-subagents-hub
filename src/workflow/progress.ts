@@ -338,6 +338,22 @@ export function flattenRunAgents(
 }
 
 /**
+ * The active phases as one short label, for a row that has no space for a tree.
+ *
+ * `Fixing (1/2)` while one group runs — the phase's position and the run's
+ * total, the same wording the status footer uses — `Fixing & Scanning` when two
+ * do (a pipeline with two stages in flight), and "" when nothing runs.
+ */
+export function phaseLabel(groups: readonly PhaseGroup[]): string {
+  const running = groups.flatMap((group, index) => (group.status === "running" ? [{ group, index }] : []));
+  return footerPhaseLabel({
+    titles: running.map(({ group }) => group.title),
+    positionStart: running.length > 0 ? running[0].index + 1 : 0,
+    totalPhases: groups.length,
+  });
+}
+
+/**
  * The phase a run is on, as an index into {@link buildPhaseGroups}' result:
  * the first group still running, else the first. A run that has not started
  * yet marks its opening phase and a finished one its last known position —

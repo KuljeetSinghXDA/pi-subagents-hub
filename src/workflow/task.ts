@@ -21,7 +21,7 @@ import { dirname, join } from "node:path";
 import { escapeXml } from "../xml.js";
 import type { WorkflowJournalEntry } from "./journal.js";
 import type { WorkflowMeta } from "./meta.js";
-import { collapse, elapsedMs, stats, type WorkflowEntry, type WorkflowRunStatus } from "./progress.js";
+import { buildPhaseGroups, collapse, elapsedMs, phaseLabel, stats, type WorkflowEntry, type WorkflowRunStatus } from "./progress.js";
 import type { WorkflowControl, WorkflowRunResult } from "./runtime.js";
 
 /** `wf_` + hex, matching Claude Code's `^wf_[a-z0-9-]{6,}$` run ids. */
@@ -97,6 +97,14 @@ export interface WorkflowTask {
    * which for a thousand-agent run is real work in the render loop.
    */
   doneCount: number;
+  /**
+   * The run's active phases, as `Fixing (1/2)`.
+   *
+   * Cached like {@link doneCount}, and for the same reason: the fleet list asks
+   * five times a second, and deriving this there would rebuild the phase groups
+   * from the whole progress log on every tick.
+   */
+  phaseLabel: string;
   totalTokens: number;
   totalToolCalls: number;
   logs: string[];
@@ -149,6 +157,7 @@ export function createWorkflowTask(init: {
     progressVersion: 0,
     agentCount: 0,
     doneCount: 0,
+    phaseLabel: "",
     totalTokens: 0,
     totalToolCalls: 0,
     logs: [],
@@ -205,6 +214,7 @@ export function updateWorkflowProgressBatch(
   task.totalTokens = totalTokens;
   task.totalToolCalls = totalToolCalls;
   task.doneCount = done;
+  task.phaseLabel = phaseLabel(buildPhaseGroups(task.workflowProgress, task.meta?.phases));
 }
 
 /**

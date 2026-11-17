@@ -11,6 +11,7 @@ import {
   type FleetWorkflow,
   formatFleetElapsed,
   formatFleetTokens,
+  formatProgressBar,
   SHARED_DOCK_COORDINATOR_KEY,
   SHARED_FLEET_COORDINATOR_KEY,
 } from "../src/ui/fleet-list.js";
@@ -1168,6 +1169,28 @@ describe("FleetList model display", () => {
  * Workflow runs
  * ------------------------------------------------------------------------- */
 
+describe("formatProgressBar", () => {
+  it("fills the done share of a 20-cell bar", () => {
+    expect(formatProgressBar(5, 10)).toEqual({ filled: "▰".repeat(10), empty: "▱".repeat(10) });
+    expect(formatProgressBar(1, 3)).toEqual({ filled: "▰".repeat(7), empty: "▱".repeat(13) });
+  });
+
+  it("is all empty before the first agent settles, and all filled at the end", () => {
+    expect(formatProgressBar(0, 4)).toEqual({ filled: "", empty: "▱".repeat(20) });
+    expect(formatProgressBar(4, 4)).toEqual({ filled: "▰".repeat(20), empty: "" });
+  });
+
+  it("handles a run with no agents and a settled one", () => {
+    expect(formatProgressBar(0, 0)).toEqual({ filled: "", empty: "▱".repeat(20) });
+    expect(formatProgressBar(9, 9)).toEqual({ filled: "▰".repeat(20), empty: "" });
+  });
+
+  it("never exceeds the bar", () => {
+    expect(formatProgressBar(99, 10).filled).toHaveLength(20);
+    expect(formatProgressBar(-1, 10).filled).toHaveLength(0);
+  });
+});
+
 describe("FleetList workflow rows", () => {
   it("renders identically with no workflow source and an empty one", () => {
     // The contract: a session without workflows behaves exactly as it did
@@ -1220,6 +1243,29 @@ describe("FleetList workflow rows", () => {
     expect(run).toContain("26.4k tokens");
     // A run owns most of the agents under it, so the container comes first.
     expect(rows.findIndex(row => row.includes("audit-src"))).toBeLessThan(agent);
+  });
+
+  it("draws the run's progress as a bar, with its count and active phase", () => {
+    const h = harness([]);
+    h.setWorkflows([makeWorkflow({ doneCount: 1, totalCount: 3, phase: "Fixing (1/3)" })]);
+    // Wide enough that no side is truncated: the theme mock's tags count as
+    // visible width inside `rightAlign`.
+    const row = h.render(200).map(plain).find(line => line.includes("audit-src"))!;
+
+    // Progress and the phase sit where an agent has its description; the
+    // numbers stay flush right, so a narrow terminal loses the bar first.
+    expect(row).toContain("▰");
+    expect(row).toContain("Fixing (1/3)");
+    expect(row).toContain("1/3 agents");
+  });
+
+  it("keeps the bar and count on a run that has not started", () => {
+    const h = harness([]);
+    h.setWorkflows([makeWorkflow({ doneCount: 0, totalCount: 4 })]);
+    const row = h.render(200).map(plain).find(line => line.includes("audit-src"))!;
+
+    expect(row).toContain("▱▱▱▱▱▱▱▱▱▱");
+    expect(row).toContain("0/4 agents");
   });
 
   it("agrees with itself about a single-agent run", () => {

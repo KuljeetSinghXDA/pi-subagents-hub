@@ -58,6 +58,7 @@ export function fleetWorkflows(workflowTasks: Map<string, WorkflowTask>): FleetW
     status: task.status,
     doneCount: task.doneCount,
     totalCount: task.agentCount,
+    phase: task.phaseLabel,
     startedAt: task.startTime,
     ...(task.endTime !== undefined ? { completedAt: task.endTime } : {}),
     tokens: task.totalTokens,

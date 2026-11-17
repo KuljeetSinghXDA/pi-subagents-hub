@@ -67,6 +67,8 @@ export interface FleetWorkflow {
   status: "running" | "completed" | "failed" | "killed" | "paused";
   doneCount: number;
   totalCount: number;
+  /** `Fixing (1/2)` — the run's active phases, or absent/"" for none. */
+  phase?: string;
   startedAt: number;
   /** Set once the run settles, which is what freezes its clock. */
   completedAt?: number;
@@ -82,6 +84,22 @@ export type AgentEntry = {
 };
 type WorkflowEntry = { kind: "workflow"; workflow: FleetWorkflow };
 type FleetEntry = MainEntry | WorkflowEntry | AgentEntry;
+
+/** Cells in a workflow row's progress bar — Claude Code's width. */
+export const PROGRESS_BAR_CELLS = 20;
+
+/**
+ * `▰▰▰▱▱…` — a run's done share as filled cells, in two runs so the caller can
+ * colour them. A run with no agents yet is all empty.
+ */
+export function formatProgressBar(
+  done: number,
+  total: number,
+  cells = PROGRESS_BAR_CELLS,
+): { filled: string; empty: string } {
+  const n = total > 0 ? Math.min(cells, Math.max(0, Math.round((cells * done) / total))) : 0;
+  return { filled: "▰".repeat(n), empty: "▱".repeat(cells - n) };
+}
 
 /**
  * Place `right` flush to `width`, truncating `left` first so the stats survive.
@@ -881,14 +899,20 @@ export class FleetList {
     hasBgTasks = false,
   ): string {
     const selected = this.active ? rosterIndex === sel : (!hasBgTasks && rosterIndex === sel);
+    const muted = (text: string) => theme.fg(selected ? "text" : "dim", text);
     const kind = theme.fg(selected ? "text" : "muted", "workflow");
     const name = selected ? theme.fg("text", workflow.name) : workflow.name;
-    const left = `  ${this.bullet(rosterIndex, sel, theme, hasBgTasks)} ${kind}  ${name}`;
+    const { filled, empty } = formatProgressBar(workflow.doneCount, workflow.totalCount);
+    const bar = theme.fg(workflow.status === "completed" ? "success" : "accent", filled) + theme.fg("dim", empty);
+    // Progress and the active phase sit where an agent has its description — the
+    // part `rightAlign` truncates first. The count, elapsed and tokens stay flush
+    // right: a narrow terminal should lose the bar before it loses the numbers.
+    const phase = workflow.phase ? ` ${muted(workflow.phase)}` : "";
+    const left = `  ${this.bullet(rosterIndex, sel, theme, hasBgTasks)} ${kind}  ${name}  ${bar}${phase}`;
     // Frozen once the run settles, exactly as an agent's clock is.
     const elapsed = (workflow.completedAt ?? Date.now()) - workflow.startedAt;
     const agents = `${workflow.doneCount}/${workflow.totalCount} agent${workflow.totalCount === 1 ? "" : "s"}`;
-    const stats = `${agents} · ${formatFleetElapsed(elapsed)} · ${formatFleetTokens(workflow.tokens)}`;
-    return rightAlign(left, selected ? theme.fg("text", stats) : theme.fg("dim", stats), width);
+    return rightAlign(left, muted(`${agents} · ${formatFleetElapsed(elapsed)} · ${formatFleetTokens(workflow.tokens)}`), width);
   }
 
   private renderAgentRow(

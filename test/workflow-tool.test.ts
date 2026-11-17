@@ -24,10 +24,12 @@ import { SUBAGENT_TOOL_NAMES } from "../src/agent-runner.js";
 import { NO_FALLBACK, registerAgents, setFallbackSubagent } from "../src/agent-types.js";
 import subagentsExtension, { WORKFLOW_ENTRY_TYPE, WORKFLOW_FILE_FLAG } from "../src/index.js";
 import { isScopeModelsEnabled, setScopeModelsEnabled } from "../src/model-scope.js";
+import { fleetWorkflows } from "../src/tools/workflow-tool.js";
 import type { AgentRecord } from "../src/types.js";
 import { createWorkflowHost } from "../src/workflow/host.js";
 import { compileJsonSchema } from "../src/workflow/json-schema.js";
 import type { WorkflowSpawnRequest } from "../src/workflow/runtime.js";
+import { createWorkflowTask } from "../src/workflow/task.js";
 import { ctx, flush, type Hermetic, hermeticDir, makePi, textOf } from "./helpers/boot-extension.js";
 
 /* ------------------------------------------------------------------------- *
@@ -1637,5 +1639,13 @@ describe("collisions with another extension", () => {
     expect(booted.pi.setActiveTools).not.toHaveBeenCalled();
     expect(booted.pi.getActiveTools()).toContain("SubagentWorkflow");
     expect(warnings(context)).toEqual([]);
+  });
+});
+
+describe("fleetWorkflows", () => {
+  it("carries a run's cached phase label to the fleet row", () => {
+    const task = createWorkflowTask({ id: "wf-1", script: "" });
+    task.phaseLabel = "Fixing (1/2)";
+    expect(fleetWorkflows(new Map([["wf-1", task]]))[0].phase).toBe("Fixing (1/2)");
   });
 });
