@@ -16,7 +16,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Cron } from "croner";
+import { Cron, CronPattern } from "croner";
 import { nanoid } from "nanoid";
 import type { AgentManager } from "./agent-manager.js";
 import { normalizeMaxTurns } from "./agent-runner.js";
@@ -419,9 +419,8 @@ export class SubagentScheduler {
       };
     }
     try {
-      // Croner validates by construction; pause and stop immediately so validation never leaves a live timer.
-      const probe = new Cron(expr, { paused: true }, () => {});
-      probe.stop();
+      // CronPattern parses without arming a timer, so validation cannot leave one behind.
+      new CronPattern(expr);
       return { valid: true };
     } catch (e) {
       return { valid: false, error: e instanceof Error ? e.message : "Invalid cron expression" };
@@ -432,7 +431,8 @@ export class SubagentScheduler {
   static parseRelativeTime(s: string): string | null {
     const m = s.match(/^\+(\d+)(s|m|h|d)$/);
     if (!m) return null;
-    const ms = parseInt(m[1], 10) * { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[m[2] as "s" | "m" | "h" | "d"];
+    const ms = SubagentScheduler.durationMs(m[1], m[2]);
+    if (ms === null) return null;
     return new Date(Date.now() + ms).toISOString();
   }
 
@@ -440,8 +440,16 @@ export class SubagentScheduler {
   static parseInterval(s: string): number | null {
     const m = s.match(/^(\d+)(s|m|h|d)$/);
     if (!m) return null;
-    const value = parseInt(m[1], 10);
-    if (value <= 0) return null;
-    return value * { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[m[2] as "s" | "m" | "h" | "d"];
+    return SubagentScheduler.durationMs(m[1], m[2]);
+  }
+
+  /**
+   * Digit+unit → a positive, exactly representable millisecond count.
+   * Zero would arm an interval that never elapses; a product past
+   * Number.MAX_SAFE_INTEGER loses precision before the timer chunking runs.
+   */
+  private static durationMs(digits: string, unit: string): number | null {
+    const ms = parseInt(digits, 10) * { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[unit as "s" | "m" | "h" | "d"];
+    return Number.isSafeInteger(ms) && ms > 0 ? ms : null;
   }
 }
