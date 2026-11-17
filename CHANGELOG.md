@@ -51,6 +51,8 @@ check the entries below for behaviour changes.
 
 - **Schedule delays above 24.85 days fire on time, fleet pause refusals are shown, and evicted transcripts are flushed.** Node clamps a single `setTimeout`/`setInterval` delay over `2^31-1` ms to 1 ms, so a `+30d` one-shot or a `30d` interval fired immediately; long delays are now armed in chunks. FleetView reports why a pause or resume was refused instead of silently doing nothing, and a record evicted or disposed still flushes its `.output` transcript before teardown. ([#16](https://github.com/ahati/pi-subagents-hub/pull/16) — thanks [@KuljeetSinghXDA](https://github.com/KuljeetSinghXDA))
 
+- **An abort during worktree setup settles the record and detaches the parent signal.** A stop that landed while `git worktree add` was still awaiting returned before the settle path, so the completion callback never fired, `blocking` stayed unset, and the parent's abort listener stayed attached. A worktree cleanup failure now also lands on the record as `status: "error"` with the message in `record.error`, instead of only reaching the console, so the completion notification shows it. ([#20](https://github.com/ahati/pi-subagents-hub/pull/20))
+
 ## [2026.11.131] - 2026-11-13
 
 > **⚠️ Behavior change — a workflow starts only when the user asks for one** ([#451](https://github.com/tintinweb/pi-subagents/pull/451)). A request for a number of agents, like "use 10 agents to …", now runs parallel `Agent` calls instead of a `SubagentWorkflow`. To run a workflow, say so ("use a workflow") or name a saved workflow.

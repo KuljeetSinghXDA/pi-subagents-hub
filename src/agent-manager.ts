@@ -351,15 +351,10 @@ export class AgentManager {
 
           if (record.status !== "running") {
             this.pool.detachParentAbort(record);
-            cleanupRecordOutput(record);
-            try {
-              await this.worktrees.cleanup(pi, baseCwd, record, {
-                description: options.description,
-                customCwd,
-              });
-            } catch (cleanupError) {
-              console.error("[pi-subagents-hub] worktree cleanup failed:", cleanupError);
-            }
+            await this.finalizeWorktree(pi, baseCwd, record, {
+              description: options.description,
+              customCwd,
+            });
             this.settleRun(record);
             return;
           }
@@ -462,17 +457,11 @@ export class AgentManager {
         record.session = session;
         detach();
 
-        cleanupRecordOutput(record);
-
-        try {
-          await this.worktrees.cleanup(pi, baseCwd, record, {
-            description: options.description,
-            customCwd,
-            onBeforeWorktreeCleanup: options.onBeforeWorktreeCleanup,
-          });
-        } catch (cleanupError) {
-          console.error("[pi-subagents-hub] worktree cleanup failed:", cleanupError);
-        }
+        await this.finalizeWorktree(pi, baseCwd, record, {
+          description: options.description,
+          customCwd,
+          onBeforeWorktreeCleanup: options.onBeforeWorktreeCleanup,
+        });
 
         this.abortOwnedChildren(id);
         this.settleRun(record);
@@ -489,16 +478,10 @@ export class AgentManager {
         }
         detach();
 
-        cleanupRecordOutput(record);
-
-        try {
-          await this.worktrees.cleanup(pi, baseCwd, record, {
-            description: options.description,
-            customCwd,
-          });
-        } catch (cleanupError) {
-          console.error("[pi-subagents-hub] worktree cleanup failed:", cleanupError);
-        }
+        await this.finalizeWorktree(pi, baseCwd, record, {
+          description: options.description,
+          customCwd,
+        });
 
         this.abortOwnedChildren(id);
         this.settleRun(record);
@@ -508,6 +491,33 @@ export class AgentManager {
     record.promise = promise;
     try { options.onSpawned?.(id); } catch (err) {
       console.error("[pi-subagents-hub] spawned callback failed:", err);
+    }
+  }
+
+  /**
+   * Flush the transcript and remove the run's worktree, recording any failure
+   * on the record instead of throwing. Throwing here lands in `launch`'s
+   * rejection handler, which deletes a non-queued record before it is reported,
+   * and `getStatusLabel` only renders `record.error` for `status === "error"`.
+   */
+  private async finalizeWorktree(
+    pi: ExtensionAPI,
+    baseCwd: string,
+    record: AgentRecord,
+    options: {
+      description?: string;
+      customCwd?: string;
+      onBeforeWorktreeCleanup?: (path: string) => Promise<void>;
+    },
+  ): Promise<void> {
+    cleanupRecordOutput(record);
+    if (!record.worktree) return;
+    try {
+      await this.worktrees.cleanup(pi, baseCwd, record, options);
+    } catch (err) {
+      const message = `Worktree cleanup failed: ${err instanceof Error ? err.message : String(err)}`;
+      record.error = record.error ? `${record.error}\n${message}` : message;
+      record.status = "error";
     }
   }
 

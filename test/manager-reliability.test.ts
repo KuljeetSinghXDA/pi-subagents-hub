@@ -188,8 +188,7 @@ describe("manager reliability regressions", () => {
     report.mockRestore();
   });
 
-  it.each([false, true])("preserves terminal status when worktree cleanup throws (failed=%s)", async (failed) => {
-    const report = vi.spyOn(console, "error").mockImplementation(() => {});
+  it.each([false, true])("records a worktree cleanup failure as an error (failed=%s)", async (failed) => {
     vi.mocked(createWorktree).mockResolvedValueOnce({ path: "/wt/copy", branch: "b", baseSha: "abc", workPath: "/wt/copy" });
     vi.mocked(cleanupWorktree).mockRejectedValue(new Error("cleanup broke"));
     if (failed) vi.mocked(runAgent).mockRejectedValueOnce(new Error("run broke"));
@@ -198,11 +197,13 @@ describe("manager reliability regressions", () => {
     await manager.awaitStartup(id);
     const record = manager.getRecord(id)!;
     await expect(record.promise).resolves.toBe(failed ? "" : "done");
-    expect(record.status).toBe(failed ? "error" : "completed");
-    expect(record.error).toBe(failed ? "run broke" : undefined);
+    // A cleanup failure belongs on the record: swallowing it loses the only
+    // trace, and re-throwing deletes a non-queued record before it is reported.
+    expect(record.status).toBe("error");
+    expect(record.error).toBe(failed
+      ? "run broke\nWorktree cleanup failed: cleanup broke"
+      : "Worktree cleanup failed: cleanup broke");
     expect(manager.runningBackground).toBe(0);
-    expect(report).toHaveBeenCalled();
-    report.mockRestore();
   });
 
   it("reaps never-started agents after individual abort and abortAll", async () => {
