@@ -144,9 +144,11 @@ async function prepareAgentSystemPrompt(
   const isolated = agentConfig?.isolated ?? options.isolated;
   const skills = isolated ? false : config.skills;
 
-  const disallowedSet = agentConfig?.disallowedTools
-    ? new Set(agentConfig.disallowedTools)
-    : undefined;
+  // A per-call list (`agent({ disallowedTools })` in a workflow script) adds to
+  // the agent definition's; it can narrow what the child gets but never widen
+  // it, so both are unioned before the tool scope is applied.
+  const disallowedNames = [...(agentConfig?.disallowedTools ?? []), ...(options.disallowedTools ?? [])];
+  const disallowedSet = disallowedNames.length > 0 ? new Set(disallowedNames) : undefined;
 
   // Nested delegation tools (opt-in, ownership-scoped). Empty unless the agent
   // set `allowed_subagents` and a nestedRuntime was provided — and never when
@@ -194,8 +196,7 @@ async function prepareAgentSystemPrompt(
 
   if (agentConfig?.memory) {
     const existingNames = new Set(toolNames);
-    const denied = agentConfig.disallowedTools ? new Set(agentConfig.disallowedTools) : undefined;
-    const effectivelyHas = (name: string) => existingNames.has(name) && !denied?.has(name);
+    const effectivelyHas = (name: string) => existingNames.has(name) && !disallowedSet?.has(name);
     const hasWriteTools = effectivelyHas("write") || effectivelyHas("edit");
 
     if (hasWriteTools) {

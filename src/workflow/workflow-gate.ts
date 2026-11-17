@@ -28,6 +28,13 @@ export interface AgentCallPayload {
   resume?: string;
   /** Reasoning effort, already validated against pi's thinking levels worker-side. */
   effort?: string;
+  /**
+   * Tools denied to this child, on top of its agent type's own deny list.
+   *
+   * Shape-checked worker-side (array of non-empty, unpadded names); the host
+   * normalizes the spelling before the spawn.
+   */
+  disallowedTools?: string[];
   /** Raw JSON Schema from `agent({ schema })`, compiled before anything spawns. */
   schema?: unknown;
 }

@@ -366,7 +366,7 @@ const CLAUDE_CODE_TOOL_ALIASES: Record<string, string> = { glob: "find", multied
  * `Read` and `LS` work, and a Claude Code name with a differently named pi built-in
  * maps to it. Anything else comes back unchanged, so runAgent still warns about it.
  */
-function normalizeToolName(name: string): string {
+export function normalizeToolName(name: string): string {
   const lower = name.toLowerCase();
   return BUILTIN_TOOL_NAMES.find(b => b === lower) ?? CLAUDE_CODE_TOOL_ALIASES[lower] ?? name;
 }

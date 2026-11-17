@@ -235,6 +235,12 @@ export interface SpawnOptions {
   model?: Model<any>;
   maxTurns?: number;
   isolated?: boolean;
+  /**
+   * Tools denied to this child, on top of its agent definition's own list.
+   * Set by the workflow host for `agent({ disallowedTools })`; unioned with the
+   * definition's list in the runner, so it can only narrow.
+   */
+  disallowedTools?: string[];
   inheritContext?: boolean;
   thinkingLevel?: ThinkingLevel;
   isBackground?: boolean;

@@ -361,6 +361,7 @@ const AGENT_OPTIONS = [
   "gate",
   "resume",
   "effort",
+  "disallowedTools",
   "schema",
 ];
 
@@ -523,6 +524,19 @@ async function agentIn(scope, prompt, opts) {
   if (effort !== undefined && EFFORT_LEVELS.indexOf(effort) === -1) {
     throw new Error("agent() opts.effort must be one of: " + EFFORT_LEVELS.join(", ") + ".");
   }
+  const disallowedTools = options.disallowedTools;
+  if (disallowedTools !== undefined) {
+    if (!Array.isArray(disallowedTools)) {
+      throw new Error("agent() opts.disallowedTools must be an array of tool names.");
+    }
+    for (const name of disallowedTools) {
+      if (typeof name !== "string" || name.trim() === "" || name.trim() !== name) {
+        throw new Error(
+          "agent() opts.disallowedTools entries must be non-empty tool names with no surrounding whitespace."
+        );
+      }
+    }
+  }
 
   // resume revives a child that already exists, so anything describing how to
   // *start* one is not a thing this call gets to decide — the revived child
@@ -547,6 +561,11 @@ async function agentIn(scope, prompt, opts) {
     if (effort !== undefined) {
       throw new Error(
         "agent() opts.resume and opts.effort are mutually exclusive: a resumed agent keeps the reasoning effort it was started with."
+      );
+    }
+    if (disallowedTools !== undefined) {
+      throw new Error(
+        "agent() opts.resume and opts.disallowedTools are mutually exclusive: a resumed agent keeps the tool contract it was started with."
       );
     }
     if (schema !== undefined) {
@@ -582,6 +601,7 @@ async function agentIn(scope, prompt, opts) {
     gate: gate,
     resume: resume,
     effort: effort,
+    disallowedTools: disallowedTools,
     schema: schema,
   });
   if (result === undefined || result === null) return null;

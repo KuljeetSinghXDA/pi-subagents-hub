@@ -83,6 +83,14 @@ export interface WorkflowSpawnRequest {
    * `ThinkingLevel`. The worker has already rejected anything off the list.
    */
   effort?: string;
+  /**
+   * Tools denied to this child, on top of its agent type's own deny list.
+   *
+   * Plain strings for the same reason as `effort`: the host boundary knows
+   * nothing about pi's tool names. The worker has already rejected a non-array,
+   * an empty entry and a padded entry; the host normalizes the spelling.
+   */
+  disallowedTools?: string[];
   isolation?: "worktree";
   /** Absolute counters for this spawn/resume invocation, not per-event deltas. */
   onProgress?(info: Pick<WorkflowSpawnResult, "tokens" | "toolCalls">): void;

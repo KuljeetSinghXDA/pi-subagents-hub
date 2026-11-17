@@ -127,6 +127,36 @@ describe("script globals", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("carries opts.disallowedTools to the spawn request", async () => {
+    const { host, calls } = stubHost();
+    const result = await run('await agent("careful", { disallowedTools: ["Bash", "Write"] });\nreturn null;', { host });
+
+    expect(result.status).toBe("completed");
+    expect(calls[0].disallowedTools).toEqual(["Bash", "Write"]);
+  });
+
+  it("leaves disallowedTools unset when the script does not ask", async () => {
+    // Unset, not defaulted: the agent definition's own deny list still decides.
+    const { host, calls } = stubHost();
+    await run('await agent("plain");\nreturn null;', { host });
+
+    expect(calls[0].disallowedTools).toBeUndefined();
+  });
+
+  it.each([
+    ["a non-array", 'await agent("a", { disallowedTools: "Bash" });', "must be an array of tool names"],
+    ["an empty entry", 'await agent("a", { disallowedTools: ["Bash", ""] });', "entries must be non-empty tool names"],
+    ["a padded entry", 'await agent("a", { disallowedTools: [" Bash"] });', "entries must be non-empty tool names"],
+    ["a non-string entry", 'await agent("a", { disallowedTools: [1] });', "entries must be non-empty tool names"],
+  ])("rejects %s in disallowedTools", async (_name, body, expected) => {
+    const { host, calls } = stubHost();
+    const result = await run(`${body}\nreturn null;`, { host });
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain(expected);
+    expect(calls).toHaveLength(0);
+  });
+
   it("passes args through verbatim and exposes meta to the script", async () => {
     const { host } = stubHost();
     const result = await run("return { got: args, name: meta.name };", {

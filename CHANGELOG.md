@@ -27,6 +27,8 @@ check the entries below for behaviour changes.
 
 - **Nested background subagents notify their parent.** A child spawned with `run_in_background: true` now delivers a `<task-notification>` steering message to the owning parent when it settles, and a cleanly idle parent waits for its active background children instead of ending the run and aborting them; a parent that fails, is stopped, or hits its turn limit still stops its children. Nested spawns still default to foreground, so unqualified sub-tasks keep returning inline. ([#12](https://github.com/ahati/pi-subagents-hub/pull/12) — thanks [@KuljeetSinghXDA](https://github.com/KuljeetSinghXDA))
 
+- **Workflow scripts can narrow a child's tools with `agent({ disallowedTools })`.** The list adds to the agent type's own `disallowed_tools` for that one child, in Claude Code's or pi's spelling (`Bash` and `bash` deny the same tool), and is refused alongside `resume` — a resumed child keeps the tool contract it was started with. ([tintinweb/pi-subagents#455](https://github.com/tintinweb/pi-subagents/pull/455) — thanks [@tintinweb](https://github.com/tintinweb))
+
 ### Changed
 
 - **A reopened agent keeps the model and thinking level it last ran with.** `Agent({ resume })`, an `@handle` after eviction, `/continue` and a workflow's `resume` now restore the saved selection instead of falling back to the parent session's model; the agent type's current pin is the fallback when the saved session records neither. Tools, system prompt and turn caps still follow the type's current definition. ([#13](https://github.com/ahati/pi-subagents-hub/pull/13) — thanks [@KuljeetSinghXDA](https://github.com/KuljeetSinghXDA))

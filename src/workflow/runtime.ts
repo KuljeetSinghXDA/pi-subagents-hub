@@ -584,6 +584,9 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
                     agentType,
                     ...(model !== undefined ? { model } : {}),
                     ...(payload.effort !== undefined ? { effort: payload.effort } : {}),
+                    ...(payload.disallowedTools !== undefined
+                      ? { disallowedTools: payload.disallowedTools }
+                      : {}),
                     ...(compiledSchema !== undefined ? { schema: compiledSchema } : {}),
                     ...(isolation !== undefined ? { isolation } : {}),
                     ...(payload.phaseIndex !== undefined ? { phaseIndex: payload.phaseIndex } : {}),

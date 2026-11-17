@@ -37,6 +37,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { AgentManager } from "../agent-manager.js";
 import { reopenTarget, worktreeLost } from "../agent-record-entry.js";
 import { getAgentConfig, resolveSpawnType } from "../agent-types.js";
+import { normalizeToolName } from "../custom-agents.js";
 import { createActivityTracker } from "../entry/activity.js";
 import { resolveModel } from "../model-resolver.js";
 import { checkModelScope } from "../model-scope.js";
@@ -498,6 +499,17 @@ export function createWorkflowHost(deps: WorkflowHostOptions): WorkflowHost {
             onSessionCreated: () => { sessionReady = true; reportResolved(); },
             ...childHooks(tracker, reportProgress),
             ...(request.schema !== undefined ? { structuredOutput: request.schema } : {}),
+            // Deny list for this child, on top of its agent definition's. The
+            // worker already rejected a non-array and padded/empty entries; the
+            // names are normalized here, where the frontmatter's are, so a Claude
+            // Code spelling (`Bash`) and a pi one (`bash`) both deny.
+            ...(request.disallowedTools !== undefined
+              ? {
+                  disallowedTools: request.disallowedTools.flatMap(name => [
+                    ...new Set([name, normalizeToolName(name)]),
+                  ]),
+                }
+              : {}),
             ...(request.isolation !== undefined ? { isolation: request.isolation } : {}),
             ...(deps.signal !== undefined ? { signal: deps.signal } : {}),
             ...(deps.rootSessionId !== undefined ? { rootSessionId: deps.rootSessionId } : {}),

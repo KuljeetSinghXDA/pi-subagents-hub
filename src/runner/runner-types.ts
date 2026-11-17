@@ -80,6 +80,16 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** Applies only when the agent file leaves `isolated:` unset — frontmatter is authoritative. */
   isolated?: boolean;
+  /**
+   * Tool names denied to this run on top of the agent definition's own
+   * `disallowed_tools`.
+   *
+   * A per-call addition, never a replacement: a workflow script's
+   * `agent({ disallowedTools })` narrows the child it asks for and cannot widen
+   * what the definition already denies. Names arrive normalized by the caller
+   * (Claude Code's spelling and pi's both).
+   */
+  disallowedTools?: string[];
   /** Storage backend for @earendil-works/pi-durable harness (defaults to MemoryStorage). */
   storage?: Storage;
   inheritContext?: boolean;

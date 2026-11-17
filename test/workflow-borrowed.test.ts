@@ -425,6 +425,11 @@ describe("resume", () => {
         'await agent("b", { resume: "impl", effort: "high" });',
         "agent() opts.resume and opts.effort are mutually exclusive",
       ],
+      [
+        "disallowedTools",
+        'await agent("b", { resume: "impl", disallowedTools: ["Bash"] });',
+        "agent() opts.resume and opts.disallowedTools are mutually exclusive",
+      ],
     ];
 
     for (const [name, body, expected] of rejected) {

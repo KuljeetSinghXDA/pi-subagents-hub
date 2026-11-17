@@ -1336,6 +1336,26 @@ describe("agent-runner master tool allowlist", () => {
     expect(tools).toContain("read");
   });
 
+  it("a per-call disallowedTools is unioned with the agent definition's list", async () => {
+    vi.mocked(getConfig).mockReturnValueOnce(makeConfig({ extensions: true }));
+    vi.mocked(getAgentConfig).mockReturnValueOnce(
+      makeAgentConfig({ extensions: true, disallowedTools: ["bash"] }),
+    );
+    vi.mocked(getToolNamesForType).mockReturnValueOnce(BUILTINS_7);
+    withExtensions({ "/ext/mcp.ts": ["mcp", "mcp_call"] });
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "Explore", "go", { pi, disallowedTools: ["mcp"] });
+
+    const tools = lastToolsPassed();
+    // The definition's deny list still applies …
+    expect(tools).not.toContain("bash");
+    // … and the call's list adds to it rather than replacing it.
+    expect(tools).not.toContain("mcp");
+    expect(tools).toContain("mcp_call");
+  });
+
   it("EXCLUDED_TOOL_NAMES never reach the allowlist even if an extension registers them", async () => {
     vi.mocked(getConfig).mockReturnValueOnce(makeConfig({ extensions: true }));
     vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ extensions: true }));

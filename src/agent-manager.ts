@@ -379,6 +379,7 @@ export class AgentManager {
       model: options.model,
       maxTurns: options.maxTurns,
       isolated: options.isolated,
+      disallowedTools: options.disallowedTools,
       inheritContext: options.inheritContext,
       thinkingLevel: options.thinkingLevel,
       structuredOutput: options.structuredOutput,

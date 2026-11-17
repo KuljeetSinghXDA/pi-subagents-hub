@@ -249,6 +249,7 @@ Spawns one subagent and resolves to its final text — or, with `schema`, to a v
 | `agentType` | string | Which agent definition to use. Defaults to `general-purpose`; built-ins are `general-purpose`, `Explore`, `Plan`, plus your custom agents. The built-in `general-purpose` gets no nested `Agent` tool here; a custom agent with `allowed_subagents` keeps its own |
 | `model` | string | `provider/modelId`, or fuzzy like `haiku` |
 | `effort` | string | `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Omitted, the agent definition's own `thinking` decides, then the parent's |
+| `disallowedTools` | string[] | Tools denied to this child, on top of its agent type's own `disallowed_tools`. Claude Code's or pi's spelling (`Write` and `write` both deny); `[]` denies none |
 | `isolation` | `"worktree"` | Run in a throwaway git worktree. Only when agents write files in parallel and would collide — it costs setup time and disk per agent. Only this option decides, as in Claude Code — an agent file's `isolation:` does not apply to workflow children |
 | `gate` | string | A shell command run after the agent finishes; a non-zero exit fails the agent and its output becomes the error |
 | `resume` | string | Continue the child that ran under that label instead of starting fresh |
@@ -256,7 +257,7 @@ Spawns one subagent and resolves to its final text — or, with `schema`, to a v
 
 Any other key is rejected **by name** at the call. Note that this checks option *keys*, not option *values* — an `agentType` that names no known agent falls back to `general-purpose` silently.
 
-Combination rules: `resume` cannot be combined with `agentType`, `model`, `effort`, `isolation`, `gate` or `schema` — a resumed child keeps the agent type, model and tree it was started with, and its session predates the `StructuredOutput` tool.
+Combination rules: `resume` cannot be combined with `agentType`, `model`, `effort`, `disallowedTools`, `isolation`, `gate` or `schema` — a resumed child keeps the agent type, model and tree it was started with, and its session predates the `StructuredOutput` tool.
 
 A child stays resumable for the whole run. The manager evicts a finished child's record about ten minutes after it settles (once its result was read), and a review or a merge queue easily takes longer; `resume` then reopens the child's saved session under the same id, still owned by the run. That reopen runs under the agent type's current definition, so the model and tree the script chose for the first run are not carried over. It fails, resolving to `null` with the reason on that agent's row, when the child's session was never saved (`rememberAgents` off, or `persist_session: false`), its file is gone, or it ran with `isolation: "worktree"` and left changes: that worktree was removed when the child finished, with its changes on a branch, and continuing the work anywhere else would split it. A child whose worktree held no changes reopens in the run's directory, as in Claude Code.
 
@@ -407,7 +408,7 @@ The script called `Date.now()`, `new Date()` or `Math.random()`. A script that v
 `meta` is evaluated before the script runs, in an empty context, so it cannot reference anything. Move the dynamic part into the body.
 
 **`agent() opts.<key> is not a recognised option.`**
-A typo, or an option from a different tool. The supported set is `label`, `phase`, `model`, `agentType`, `isolation`, `gate`, `resume`, `effort`, `schema`.
+A typo, or an option from a different tool. The supported set is `label`, `phase`, `model`, `agentType`, `isolation`, `gate`, `resume`, `effort`, `disallowedTools`, `schema`.
 
 **An agent ran as the wrong type and nothing said so.**
 An `agentType` that names no known agent falls back to `general-purpose` **silently** — unlike the `Agent` tool, which tells you. Option *keys* are validated; option *values* are not. Check the spelling against `/agents`; matching is case-insensitive, and a disabled agent does not count.
@@ -456,7 +457,7 @@ Different:
 - **`schema` is pressured, not forced** — see the troubleshooting entry above.
 - If both extensions are loaded, this one **stands down** rather than offering the model two orchestrators.
 
-Additions on this side: `gate`, `resume`, `effort`, `agentError(label)`, journal-backed `resumeFromRunId`, and the un-awaited-`agent()` check. All are optional, which is what keeps a Claude Code script portable.
+Additions on this side: `gate`, `resume`, `effort`, `disallowedTools`, `agentError(label)`, journal-backed `resumeFromRunId`, and the un-awaited-`agent()` check. All are optional, which is what keeps a Claude Code script portable.
 
 ## Examples
 
