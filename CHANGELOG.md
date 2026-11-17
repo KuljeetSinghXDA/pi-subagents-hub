@@ -35,6 +35,8 @@ check the entries below for behaviour changes.
 
 ### Fixed
 
+- **A workflow `agent({ schema })` refuses a schema that cannot work instead of accepting it silently.** `typebox` tolerated an unknown keyword (`prefixItems`, a stray `x-…`), a non-draft-07 `$schema`, `$async`, a malformed `pattern`, crossed bounds and an `enum` of the wrong type; the schema then either matched nothing or failed inside the child, and the script saw only `null`. Schemas are now checked against draft-07 with Ajv and linted for unsatisfiable combinations before an agent starts, with traversal bounded so a pathologically nested schema fails with a message rather than a stack overflow. ([tintinweb/pi-subagents#455](https://github.com/tintinweb/pi-subagents/pull/455) — thanks [@tintinweb](https://github.com/tintinweb))
+
 - **A foreground `Agent` result reports the agent's resumable name.** A blocking spawn's failure and a foreground resume now carry `Agent: <name>` (the generated or caller-given one); nested inline results keep `Agent ID:` because nested children have no alias and their `resume` takes the id. ([tintinweb/pi-subagents#311](https://github.com/tintinweb/pi-subagents/pull/311) — thanks [@knthmn](https://github.com/knthmn); ported in [#17](https://github.com/ahati/pi-subagents-hub/pull/17))
 
 - **Worktree preservation failures keep the work and surface it.** The preservation commit bypasses commit signing, a failed commit or removal keeps the worktree and returns its path (and branch), and the record settles as an error instead of reporting no changes. ([tintinweb/pi-subagents#268](https://github.com/tintinweb/pi-subagents/pull/268) — thanks [@HerbertGao](https://github.com/HerbertGao); ported in [#17](https://github.com/ahati/pi-subagents-hub/pull/17))

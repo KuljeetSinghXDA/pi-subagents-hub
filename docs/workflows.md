@@ -253,7 +253,7 @@ Spawns one subagent and resolves to its final text — or, with `schema`, to a v
 | `isolation` | `"worktree"` | Run in a throwaway git worktree. Only when agents write files in parallel and would collide — it costs setup time and disk per agent. Only this option decides, as in Claude Code — an agent file's `isolation:` does not apply to workflow children |
 | `gate` | string | A shell command run after the agent finishes; a non-zero exit fails the agent and its output becomes the error |
 | `resume` | string | Continue the child that ran under that label instead of starting fresh |
-| `schema` | object | A JSON Schema with an object root. Resolves to the validated object instead of text |
+| `schema` | object | A JSON Schema with an object root. Resolves to the validated object instead of text. Checked against draft-07 before anything spawns, and refused when no value could satisfy it — see the troubleshooting entry |
 
 Any other key is rejected **by name** at the call. Note that this checks option *keys*, not option *values* — an `agentType` that names no known agent falls back to `general-purpose` silently.
 
@@ -415,6 +415,10 @@ An `agentType` that names no known agent falls back to `general-purpose` **silen
 
 **`agent()` returned `null`.**
 The agent failed terminally, or you skipped it with `s` in the inspector. With `schema`, it also covers a child that never produced a payload matching the schema. `agentError(label)` returns the bounded reason, also saved on the journal entry's `error` field.
+
+**`agent() opts.schema is not a valid draft-07 JSON Schema: …`**
+
+The schema was refused before any agent started, so the call cost no model turn. The message names the path. Common causes: a keyword this draft lacks (`prefixItems`, a stray `x-…` annotation), a non-draft-07 `$schema`, `$async`, a malformed `pattern`, or a combination no value can satisfy — a crossed `minimum`/`maximum`, an `enum` whose values cannot match the declared `type`, or a `required` entry with no `properties` schema. Fix the schema and re-run.
 
 **A `schema` call came back as `null` even though the agent clearly answered.**
 `schema` is pressure, not a guarantee. The child gets a `StructuredOutput` tool, `constrainedSampling` set to `strict: "prefer"`, and a validation-and-retry round trip — three soft pressures, where Claude Code has one hard one (it can force the tool call; this cannot, because `toolChoice` is not plumbed through pi's `AgentSession`). Keep schemas small and flat, and `.filter(Boolean)` after every schema stage.

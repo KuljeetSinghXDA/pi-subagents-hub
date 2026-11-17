@@ -73,6 +73,96 @@ describe("compiling a script-supplied schema", () => {
   });
 });
 
+describe("refusing a schema no value could satisfy", () => {
+  const refused: Array<[string, Record<string, unknown>, RegExp]> = [
+    [
+      "an unknown keyword",
+      { type: "object", properties: { a: { type: "string", prefixItems: [] } } },
+      /unknown keyword/,
+    ],
+    [
+      "a non-draft-07 $schema",
+      { $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", properties: {} },
+      /no schema with key|unknown keyword|draft-07/,
+    ],
+    ["$async", { $async: true, type: "object", properties: {} }, /\$async/],
+    [
+      "crossed bounds",
+      { type: "object", properties: { n: { type: "number", minimum: 10, maximum: 1 } } },
+      /minimum 10 above maximum 1/,
+    ],
+    [
+      "an enum no value of its type can match",
+      { type: "object", properties: { a: { type: "string", enum: [1, 2] } } },
+      /none of which its type "string" can match/,
+    ],
+    [
+      "an empty enum",
+      { type: "object", properties: { a: { enum: [] } } },
+      /is empty/,
+    ],
+    [
+      "required without a properties entry",
+      { type: "object", properties: { b: { type: "string" } }, required: ["a"] },
+      /has no properties entry/,
+    ],
+    [
+      "required that additionalProperties forbids",
+      { type: "object", properties: {}, required: ["a"], additionalProperties: false },
+      /additionalProperties is false/,
+    ],
+    [
+      "a malformed pattern",
+      { type: "object", properties: { a: { type: "string", pattern: "(" } } },
+      /regular expression/i,
+    ],
+  ];
+
+  for (const [name, schema, expected] of refused) {
+    it(`refuses ${name}`, () => {
+      const result = compileJsonSchema(schema);
+      expect(result.ok, `${name} should not compile`).toBe(false);
+      if (!result.ok) expect(result.message).toMatch(expected);
+    });
+  }
+
+  it("refuses a schema nested past the traversal cap without overflowing the stack", () => {
+    // 12k levels: `JSON.stringify` would recurse that deep too, so the guard has
+    // to run before it.
+    let deep: Record<string, unknown> = { type: "string" };
+    for (let i = 0; i < 12_000; i++) deep = { type: "object", properties: { a: deep } };
+    const result = compileJsonSchema(deep);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toMatch(/too large or too deeply nested/);
+  });
+
+  it("does not mistake a property named after a keyword for the keyword", () => {
+    // `properties.required` is data, not a `required` clause.
+    const schema = {
+      type: "object",
+      properties: { required: { type: "string" }, enum: { type: "string" } },
+      required: ["required"],
+    };
+    expect(compileJsonSchema(schema).ok).toBe(true);
+  });
+
+  it("still accepts a schema that is merely unusual", () => {
+    // Formats are not validated, unions are legal, and `$defs` is walked as
+    // schemas while its keys stay names.
+    const schema = {
+      type: "object",
+      properties: {
+        when: { type: "string", format: "date-time" },
+        either: { oneOf: [{ type: "string" }, { type: "number", minimum: 0, maximum: 10 }] },
+        ref: { $ref: "#/$defs/thing" },
+      },
+      required: ["when"],
+      $defs: { thing: { type: "object", properties: { n: { type: "integer" } } } },
+    };
+    expect(compileJsonSchema(schema).ok).toBe(true);
+  });
+});
+
 describe("checking a payload", () => {
   it("passes a conforming value", () => {
     expect(compile(FINDINGS).check({ findings: [{ file: "a.ts", line: 3 }] })).toBe(true);
