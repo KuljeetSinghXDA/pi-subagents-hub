@@ -27,7 +27,7 @@ import { resumeAgent, runAgent } from "../src/agent-runner.js";
 import { createAskAnswerTools, createNestedSubagentTools } from "../src/nested-tools.js";
 import { createGetResultTool } from "../src/tools/inspect-tools.js";
 import { addUsage } from "../src/usage.js";
-import { createWorktree, isWorktreeIsolationEnabled } from "../src/worktree.js";
+import { cleanupWorktree, createWorktree, isWorktreeIsolationEnabled } from "../src/worktree.js";
 
 const mockPi = {} as any;
 const mockCtx = { cwd: "/tmp" } as any;
@@ -3283,5 +3283,131 @@ describe("AgentManager — spawnPrompt (ephemeral respawn recipe)", () => {
     await manager.resume(id, "new intent");
     await record.promise;
     expect(record.spawnPrompt).toBe("original task");
+  });
+});
+
+describe("AgentManager — abort during worktree setup", () => {
+  let manager: AgentManager;
+
+  afterEach(() => {
+    manager?.dispose();
+  });
+
+  /** Queue a background worktree spawn behind a blocker, then abort it mid-setup. */
+  async function abortQueuedWorktreeSpawn() {
+    const onComplete = vi.fn();
+    manager = new AgentManager(onComplete, 1);
+
+    let resolveBlocker!: (v: any) => void;
+    vi.mocked(runAgent).mockImplementationOnce(() => new Promise(r => { resolveBlocker = r; }) as any);
+    const blockerId = manager.spawn(mockPi, mockCtx, "general-purpose", "blocker", {
+      description: "blocker",
+      isBackground: true,
+    });
+
+    let resolveSetup!: (v: any) => void;
+    vi.mocked(createWorktree).mockImplementationOnce(() => new Promise(r => { resolveSetup = r; }));
+    vi.mocked(cleanupWorktree).mockResolvedValueOnce({ hasChanges: false } as never);
+
+    const parentController = new AbortController();
+    const removeSpy = vi.spyOn(parentController.signal, "removeEventListener");
+
+    const id = manager.spawn(mockPi, mockCtx, "general-purpose", "worktree task", {
+      description: "wt-abort",
+      isBackground: true,
+      isolation: "worktree",
+      signal: parentController.signal,
+    });
+    const record = manager.getRecord(id)!;
+    expect(record.status).toBe("queued");
+
+    // Finish the blocker so the queued worktree agent launches and blocks on createWorktree.
+    resolveBlocker({ responseText: "done", session: mockSession(), aborted: false, steered: false });
+    await manager.getRecord(blockerId)!.promise;
+    expect(record.status).toBe("running");
+
+    // Abort while createWorktree is still pending.
+    expect(manager.abort(id)).toBe(true);
+    expect(record.status).toBe("stopped");
+
+    resolveSetup({
+      path: "/tmp/wt-early-abort",
+      branch: "pi-agent-early",
+      baseSha: "abc123",
+      workPath: "/tmp/wt-early-abort",
+    });
+    await manager.awaitStartup(id);
+
+    return { onComplete, record, removeSpy };
+  }
+
+  it("settles a background record and detaches its parent signal", async () => {
+    const { onComplete, record, removeSpy } = await abortQueuedWorktreeSpawn();
+
+    expect(onComplete).toHaveBeenCalledTimes(2);
+    expect(onComplete).toHaveBeenLastCalledWith(record);
+    expect(record.status).toBe("stopped");
+    expect(record.blocking).toBe(false);
+    expect((manager as any).runningBackground).toBe(0);
+    expect(removeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a settled record from a foreground spawnAndWait", async () => {
+    const onComplete = vi.fn();
+    manager = new AgentManager(onComplete, 1);
+    vi.mocked(createWorktree).mockImplementationOnce(
+      () => new Promise(resolve => {
+        queueMicrotask(() => {
+          const fg = manager.listAgents().find(a => a.description === "wt-fg-abort");
+          if (fg) manager.abort(fg.id);
+          resolve({
+            path: "/tmp/wt-fg-abort",
+            branch: "pi-agent-fg",
+            baseSha: "abc123",
+            workPath: "/tmp/wt-fg-abort",
+          });
+        });
+      }),
+    );
+    vi.mocked(cleanupWorktree).mockResolvedValueOnce({ hasChanges: false } as never);
+
+    const { record } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "fg wt", {
+      description: "wt-fg-abort",
+      isolation: "worktree",
+    });
+
+    expect(record.status).toBe("stopped");
+    expect(record.blocking).toBe(false);
+    expect(record.resultConsumed).toBe(true);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("records a worktree cleanup failure on the record instead of throwing", async () => {
+    const onComplete = vi.fn();
+    manager = new AgentManager(onComplete);
+    vi.mocked(createWorktree).mockResolvedValueOnce({
+      path: "/tmp/wt-cleanup-fail",
+      branch: "pi-agent-fail",
+      baseSha: "abc123",
+      workPath: "/tmp/wt-cleanup-fail",
+    } as never);
+    vi.mocked(cleanupWorktree).mockRejectedValueOnce(new Error("git worktree remove failed"));
+    resolvedRun();
+
+    const id = manager.spawn(mockPi, mockCtx, "general-purpose", "go", {
+      description: "cleanup-fail",
+      isBackground: true,
+      isolation: "worktree",
+    });
+    const record = manager.getRecord(id)!;
+    await manager.awaitStartup(id);
+    await record.promise;
+
+    // The failure belongs on the record: a throw here would delete a
+    // non-queued record before its completion notification runs.
+    expect(record.status).toBe("error");
+    expect(record.error).toBe("Worktree cleanup failed: git worktree remove failed");
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(manager.getRecord(id)).toBe(record);
   });
 });

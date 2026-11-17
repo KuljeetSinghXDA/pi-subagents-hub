@@ -53,6 +53,8 @@ check the entries below for behaviour changes.
 
 - **Schedule validation leaves no timer behind, and zero-duration schedules are refused.** `validateCronExpression` now parses with `CronPattern` instead of constructing a `Cron`, so checking a schedule no longer keeps a timer chain alive; `0s` intervals and `+0s` relatives are rejected before the job is stored, so a job that can never fire no longer claims its name. Durations whose millisecond product passes `Number.MAX_SAFE_INTEGER` are rejected too. ([#19](https://github.com/ahati/pi-subagents-hub/pull/19))
 
+- **An abort during worktree setup settles the record and detaches the parent signal.** A stop that landed while `git worktree add` was still awaiting returned before the settle path, so the completion callback never fired, `blocking` stayed unset, and the parent's abort listener stayed attached. A worktree cleanup failure now also lands on the record as `status: "error"` with the message in `record.error`, instead of only reaching the console, so the completion notification shows it. ([#20](https://github.com/ahati/pi-subagents-hub/pull/20))
+
 ## [2026.11.131] - 2026-11-13
 
 > **⚠️ Behavior change — a workflow starts only when the user asks for one** ([#451](https://github.com/tintinweb/pi-subagents/pull/451)). A request for a number of agents, like "use 10 agents to …", now runs parallel `Agent` calls instead of a `SubagentWorkflow`. To run a workflow, say so ("use a workflow") or name a saved workflow.
