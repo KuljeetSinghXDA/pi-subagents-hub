@@ -7,6 +7,7 @@
 
 import { createCodingTools, createReadOnlyTools } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_AGENTS } from "./default-agents.js";
+import type { ToolDescriptionMode } from "./settings.js";
 import type { AgentConfig } from "./types.js";
 
 /**
@@ -342,5 +343,90 @@ export function getConfig(type: string): {
     skills: true,
     promptMode: "append",
   };
+}
+
+/**
+ * Which Agent tool description the LLM sees (#91). Module state rather than an
+ * index.ts closure because nested `Agent` tools, built per subagent session,
+ * follow it too. Read when a tool is built.
+ */
+let toolDescriptionMode: ToolDescriptionMode = "full";
+
+export function getToolDescriptionMode(): ToolDescriptionMode { return toolDescriptionMode; }
+export function setToolDescriptionMode(mode: ToolDescriptionMode): void { toolDescriptionMode = mode; }
+
+/** Derive a short model label from a model string. */
+export function getModelLabelFromConfig(model: string): string {
+  // Strip provider prefix (e.g. "anthropic/claude-sonnet-4-6" -> "claude-sonnet-4-6")
+  const name = model.includes("/") ? model.split("/").pop()! : model;
+  // Strip trailing date suffix (e.g. "claude-haiku-4-5-20251001" -> "claude-haiku-4-5")
+  return name.replace(/-\d{8}$/, "");
+}
+
+/** First sentence of an agent description — for the compact type list. */
+export function firstSentence(text: string): string {
+  const match = text.match(/^.*?[.!?](?=\s|$)/s);
+  return (match ? match[0] : text).replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The "Available agent types" list in an Agent tool description, one line per
+ * name. Full lines carry the description, the model label and the tool scope;
+ * compact lines the description's first sentence and the tool scope.
+ *
+ * Takes the names and the lookup rather than reading the global registry, so a
+ * nested `Agent` tool can render its own allowlisted subset (#457).
+ */
+export function formatAgentTypeList(
+  names: readonly string[],
+  lookup: (name: string) => AgentConfig | undefined,
+  compact: boolean,
+): string {
+  return names.map((name) => {
+    const cfg = lookup(name);
+    const tools = ` (Tools: ${formatToolsSuffix(cfg)})`;
+    if (compact) return `- ${name}: ${firstSentence(cfg?.description ?? name)}${tools}`;
+    const model = cfg?.model ? ` (${getModelLabelFromConfig(cfg.model)})` : "";
+    return `- ${name}: ${cfg?.description ?? name}${model}${tools}`;
+  }).join("\n");
+}
+
+/**
+ * Format an agent's tool scope for the Agent tool description.
+ *
+ * Bare `mcp__` entries narrow MCP tools on top of the built-in list, so they are
+ * named after it — an agent with `tools: read, mcp__radius__*` that advertised
+ * `read` alone would read as narrower than it is.
+ *
+ * Two distinctions matter, both of them capability claims the orchestrator acts on:
+ *
+ * - absent vs empty. `builtinToolNames: undefined` means the agent never narrowed
+ *   its tools (the shipped defaults); `[]` is what `tools: none` and an `ext:`-only
+ *   `tools:` parse to, and the runtime really does hand those agents no built-ins.
+ *   Rendering both "*" tells the orchestrator a tool-less agent can run `bash`.
+ * - empty-with-extensions vs empty-without. Zero built-ins does NOT imply zero
+ *   tools: `tools: none` alongside `extensions:` still surfaces every extension
+ *   tool. Calling that "none" understates the agent instead of overstating it —
+ *   better, but still wrong. "none" is reserved for agents that genuinely can
+ *   call nothing: `isolated` agents and those with `extensions: false`.
+ */
+export function formatToolsSuffix(cfg: AgentConfig | undefined): string {
+  const tools = cfg?.builtinToolNames;
+  const mcp = cfg?.mcpToolPatterns ?? [];
+  const withMcp = (suffix: string) => (mcp.length > 0 ? [suffix, ...mcp].join(", ") : suffix);
+  if (!tools) return withMcp("*");
+  if (tools.length === 0) {
+    // `isolated` overrides extensions to false in the runner, so both mean the
+    // agent has no extension tools either — and then it truly has nothing.
+    const noExtensionTools = cfg?.isolated === true || cfg?.extensions === false;
+    if (noExtensionTools) return "none";
+    // An `mcp__`-only scope names the MCP tools it does reach; "extension tools
+    // only" would leave out that they are narrowed.
+    return mcp.length > 0 ? mcp.join(", ") : "no built-ins, extension tools only";
+  }
+  const isFullSet =
+    tools.length === BUILTIN_TOOL_NAMES.length
+    && BUILTIN_TOOL_NAMES.every((t) => tools.includes(t));
+  return withMcp(isFullSet ? "*" : tools.join(", "));
 }
 

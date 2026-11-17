@@ -2,42 +2,16 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { getAgentConfig, getAvailableTypes } from "../agent-types.js";
-import { formatToolsSuffix, THINKING_LEVELS } from "../entry/renderers.js";
+import { formatAgentTypeList, getAgentConfig, getAvailableTypes } from "../agent-types.js";
+import { THINKING_LEVELS } from "../entry/renderers.js";
 import { isolationParam } from "../invocation-config.js";
 import type { ToolDescriptionMode } from "../settings.js";
 
-/** Derive a short model label from a model string. */
-export function getModelLabelFromConfig(model: string): string {
-  const name = model.includes("/") ? model.split("/").pop()! : model;
-  return name.replace(/-\d{8}$/, "");
-}
-
-/** First sentence of an agent description — for the compact type list. */
-function firstSentence(text: string): string {
-  const match = text.match(/^.*?[.!?](?=\s|$)/s);
-  return (match ? match[0] : text).replace(/\s+/g, " ").trim();
-}
-
 /** Build the full type list text dynamically from available agents only. */
-export function buildTypeListText(): string {
-  const available = getAvailableTypes();
-
-  return available.map((name) => {
-    const cfg = getAgentConfig(name);
-    const modelSuffix = cfg?.model ? ` (${getModelLabelFromConfig(cfg.model)})` : "";
-    const toolsSuffix = ` (Tools: ${formatToolsSuffix(cfg)})`;
-    return `- ${name}: ${cfg?.description ?? name}${modelSuffix}${toolsSuffix}`;
-  }).join("\n");
-}
+export const buildTypeListText = (): string => formatAgentTypeList(getAvailableTypes(), getAgentConfig, false);
 
 /** Compact type list: one line per agent, first sentence only. */
-export function buildCompactTypeListText(): string {
-  return getAvailableTypes().map((name) => {
-    const cfg = getAgentConfig(name);
-    return `- ${name}: ${firstSentence(cfg?.description ?? name)} (Tools: ${formatToolsSuffix(cfg)})`;
-  }).join("\n");
-}
+export const buildCompactTypeListText = (): string => formatAgentTypeList(getAvailableTypes(), getAgentConfig, true);
 
 const scheduleParamShape = {
   schedule: Type.Optional(

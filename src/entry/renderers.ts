@@ -1,8 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Text } from "@earendil-works/pi-tui";
-import { BUILTIN_TOOL_NAMES } from "../agent-types.js";
 import { getStatusNote } from "../status-note.js";
-import type { AgentConfig, AgentRecord, NotificationDetails } from "../types.js";
+import type { AgentRecord, NotificationDetails } from "../types.js";
 import { type AgentActivity, type AgentDetails, formatCost, formatMs, formatTokens, formatTurns, type Theme } from "../ui/agent-widget.js";
 import { resolveMarkdownTheme } from "../ui/viewer/viewer-types.js";
 import { renderWorkflowEntryCard } from "../ui/workflow-card.js";
@@ -180,33 +179,6 @@ export function buildNotificationDetails(record: AgentRecord, activity?: AgentAc
     error: record.error,
     resultPreview: record.result ?? record.error ?? "No output.",
   };
-}
-
-/**
- * Format an agent's tool scope for the Agent tool description.
- *
- * Bare `mcp__` entries narrow MCP tools on top of the built-in list, so they are
- * named after it — an agent with `tools: read, mcp__radius__*` that advertised
- * `read` alone would read as narrower than it is.
- */
-export function formatToolsSuffix(cfg: AgentConfig | undefined): string {
-  const tools = cfg?.builtinToolNames;
-  const mcp = cfg?.mcpToolPatterns ?? [];
-  const withMcp = (suffix: string) => (mcp.length > 0 ? [suffix, ...mcp].join(", ") : suffix);
-  if (!tools) return withMcp("*");
-  if (tools.length === 0) {
-    // `isolated` overrides extensions to false in the runner, so both mean the
-    // agent has no extension tools either — and then it truly has nothing.
-    const noExtensionTools = cfg?.isolated === true || cfg?.extensions === false;
-    if (noExtensionTools) return "none";
-    // An `mcp__`-only scope names the MCP tools it does reach; "extension tools
-    // only" would leave out that they are narrowed.
-    return mcp.length > 0 ? mcp.join(", ") : "no built-ins, extension tools only";
-  }
-  const isFullSet =
-    tools.length === BUILTIN_TOOL_NAMES.length
-    && BUILTIN_TOOL_NAMES.every((t) => tools.includes(t));
-  return withMcp(isFullSet ? "*" : tools.join(", "));
 }
 
 /** CLI flag that runs a workflow script at session start. */

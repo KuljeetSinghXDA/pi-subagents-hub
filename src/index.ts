@@ -30,11 +30,14 @@ import {
   setUncutPromptProviders,
 } from "./agent-runner.js";
 import {
+  formatToolsSuffix,
   getAgentConfig,
+  getToolDescriptionMode,
   registerAgents,
   resolveSpawnType,
   setDefaultsDisabled,
   setFallbackSubagent,
+  setToolDescriptionMode,
 } from "./agent-types.js";
 import { inChildSessionContext } from "./child-context.js";
 import {
@@ -70,7 +73,6 @@ import {
 import {
   createActivityTracker,
   FOREIGN_WORKFLOW_TOOL_NAMES,
-  formatToolsSuffix,
   registerSubagentRenderers,
   renderRunningAgentStatus,
   WORKFLOW_ENTRY_TYPE,
@@ -100,7 +102,6 @@ import {
   applyAndEmitLoaded,
   loadSettings,
   type SettingsAppliers,
-  type ToolDescriptionMode,
 } from "./settings.js";
 import { createAgentTool } from "./tools/agent-tool.js";
 import {
@@ -402,10 +403,6 @@ export default function (pi: ExtensionAPI) {
     setDefaultsDisabled(b);
     reloadCustomAgents();
   }
-
-  let toolDescriptionMode: ToolDescriptionMode = "full";
-  function getToolDescriptionMode(): ToolDescriptionMode { return toolDescriptionMode; }
-  function setToolDescriptionMode(mode: ToolDescriptionMode): void { toolDescriptionMode = mode; }
 
   function registerTurnGroup() {
     const ids = turnGroupSpawns;

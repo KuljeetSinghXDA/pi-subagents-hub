@@ -14,12 +14,11 @@ import {
 import { locateAgentFile } from "../agent-file-toggle.js";
 import { type AgentManager, isTopLevelAgent } from "../agent-manager.js";
 import { rowDescription, sourceIndicator, sourceLegend } from "../agent-source-badge.js";
-import { getAgentConfig, getAllTypes } from "../agent-types.js";
+import { getAgentConfig, getAllTypes, getModelLabelFromConfig } from "../agent-types.js";
 import { stripAgentPrefix } from "../mention.js";
 import { type ModelRegistry, resolveModel } from "../model-resolver.js";
 import { packageNameForPath } from "../package-resources.js";
 import type { SubagentScheduler } from "../schedule.js";
-import { getModelLabelFromConfig } from "../tools/agent-tool-schema.js";
 import type { AgentConfig, AgentRecord, AgentTombstone } from "../types.js";
 import { agentTree } from "../ui/agent-tree.js";
 import { formatDuration, getDisplayName } from "../ui/agent-widget.js";
