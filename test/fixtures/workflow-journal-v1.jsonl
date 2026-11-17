@@ -1,0 +1,9 @@
+{"path":"#0","index":0,"key":"6d4c83fb21b13ee9adcee186ce547695","ok":true,"text":"files: auth.ts, session.ts"}
+{"path":"#1","index":1,"key":"00a143ced8adb4343a4450b63df183b3","ok":true,"text":"no findings"}
+{"path":"#2","index":2,"key":"40d820835a74f91c8f3e54d444659dd5","ok":true,"text":"fixed","gate":{"ok":true,"output":"12 passed","cwd":"/repo"}}
+{"path":"#3","index":3,"key":"a6618e3a7e1e4f210dee13eb6aaa3ea2","ok":false,"error":"provider timeout"}
+{"path":"#4","index":4,"key":"ca68383f61c9dde7bc74e6e3a94abd8d","ok":true,"text":"resumed answer","resumed":true}
+{"path":"/0:p:1#0","index":5,"key":"962d540281710f6c252a327f80fd75a5","ok":true,"text":"thunk answer"}
+{"path":"#6","index":6,"key":"6d4c83fb21b13ee9adcee186ce547695","ok":true,"text":"files: auth.ts, session.ts","v":2,"artifacts":["a.ts"]}
+{"index":7,"key":"legacy","ok":true,"text":"legacy"}
+{"path":"#8","index":8,"key":"trunc
