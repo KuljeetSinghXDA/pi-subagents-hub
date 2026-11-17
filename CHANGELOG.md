@@ -57,6 +57,8 @@ check the entries below for behaviour changes.
 
 - **A `headlessWaitMinutes` ceiling above 24.85 days no longer stops the wait immediately.** Node clamps a single `setTimeout` delay over `2^31-1` ms to 1 ms, so a large ceiling fired at once; the ceiling now hops through bounded delays with one `setLongTimeout` helper, shared with the scheduler. The Settings row also enforces the loader's 1440-minute cap, so a value `sanitize` would drop on restart can no longer be saved. ([#22](https://github.com/ahati/pi-subagents-hub/pull/22))
 
+- **A mention clone's system prompt no longer lists the working directory twice.** Pi renders the clone's own `<cwd>` section after the prompt it is handed, so the parent's copy made the directory appear twice; the clone's prompt now drops the parent's `cwd` and keeps every other section, including the ones extensions add mid-turn. ([tintinweb/pi-subagents#459](https://github.com/tintinweb/pi-subagents/issues/459) — thanks [@sjdhome](https://github.com/sjdhome) for the report and [@tintinweb](https://github.com/tintinweb) for the fix)
+
 ## [2026.11.131] - 2026-11-13
 
 > **⚠️ Behavior change — a workflow starts only when the user asks for one** ([#451](https://github.com/tintinweb/pi-subagents/pull/451)). A request for a number of agents, like "use 10 agents to …", now runs parallel `Agent` calls instead of a `SubagentWorkflow`. To run a workflow, say so ("use a workflow") or name a saved workflow.
