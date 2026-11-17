@@ -51,6 +51,8 @@ check the entries below for behaviour changes.
 
 - **Schedule delays above 24.85 days fire on time, fleet pause refusals are shown, and evicted transcripts are flushed.** Node clamps a single `setTimeout`/`setInterval` delay over `2^31-1` ms to 1 ms, so a `+30d` one-shot or a `30d` interval fired immediately; long delays are now armed in chunks. FleetView reports why a pause or resume was refused instead of silently doing nothing, and a record evicted or disposed still flushes its `.output` transcript before teardown. ([#16](https://github.com/ahati/pi-subagents-hub/pull/16) — thanks [@KuljeetSinghXDA](https://github.com/KuljeetSinghXDA))
 
+- **Schedule validation leaves no timer behind, and zero-duration schedules are refused.** `validateCronExpression` now parses with `CronPattern` instead of constructing a `Cron`, so checking a schedule no longer keeps a timer chain alive; `0s` intervals and `+0s` relatives are rejected before the job is stored, so a job that can never fire no longer claims its name. Durations whose millisecond product passes `Number.MAX_SAFE_INTEGER` are rejected too. ([#19](https://github.com/ahati/pi-subagents-hub/pull/19))
+
 - **An abort during worktree setup settles the record and detaches the parent signal.** A stop that landed while `git worktree add` was still awaiting returned before the settle path, so the completion callback never fired, `blocking` stayed unset, and the parent's abort listener stayed attached. A worktree cleanup failure now also lands on the record as `status: "error"` with the message in `record.error`, instead of only reaching the console, so the completion notification shows it. ([#20](https://github.com/ahati/pi-subagents-hub/pull/20))
 
 ## [2026.11.131] - 2026-11-13
