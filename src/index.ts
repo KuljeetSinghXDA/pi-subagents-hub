@@ -95,7 +95,7 @@ import {
   setPackageAgentsGate,
   setPackageWorkflowsGate,
 } from "./package-resources.js";
-import { SubagentScheduler } from "./schedule.js";
+import { SubagentScheduler, setLongTimeout } from "./schedule.js";
 import {
   applyAndEmitLoaded,
   loadSettings,
@@ -596,9 +596,11 @@ export default function (pi: ExtensionAPI) {
       `[pi-subagents] Waiting for background work to finish (${describeBackgroundWork()}). Press Ctrl+C to exit now.\n`,
     );
     const headlessWaitMinutes = getHeadlessWaitMinutes();
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancelCeiling: (() => void) | undefined;
     const ceiling = headlessWaitMinutes > 0
-      ? new Promise<"ceiling">(resolve => { timer = setTimeout(() => resolve("ceiling"), headlessWaitMinutes * 60_000); })
+      ? new Promise<"ceiling">(resolve => {
+          cancelCeiling = setLongTimeout(headlessWaitMinutes * 60_000, () => resolve("ceiling"));
+        })
       : undefined;
     try {
       // Loops: a workflow starts agents, and a finished agent starts a queued one.
@@ -618,7 +620,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
     } finally {
-      clearTimeout(timer);
+      cancelCeiling?.();
     }
     const message = outbox.take();
     if (!message) return;

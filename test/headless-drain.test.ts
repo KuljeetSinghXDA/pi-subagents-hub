@@ -134,7 +134,7 @@ describe("headless drain at agent_before_settle", () => {
     const { booted, context, settle } = await boot("print", { headlessWaitMinutes: 1 });
     const id = await spawnBackground(booted, context);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
 
     const result = settle();
     await vi.advanceTimersByTimeAsync(60_000);
@@ -158,7 +158,7 @@ describe("headless drain at agent_before_settle", () => {
     expect(record(id).status).toBe("running");
     expect((globalThis as any)[Symbol.for("pi-subagents:manager")].hasRunning()).toBe(true);
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
 
     let settled = false;
     void settle().then(() => { settled = true; });
@@ -167,5 +167,27 @@ describe("headless drain at agent_before_settle", () => {
     await flush();
 
     expect(settled).toBe(false);
+  });
+
+  it("chunks headlessWaitMinutes delays above 2^31-1 ms instead of overflowing to 1 ms", async () => {
+    heldRun();
+    const { booted, context, settle } = await boot("print");
+    setHeadlessWaitMinutes(40_000); // > 24.85 days (2^31 - 1 ms)
+    const id = await spawnBackground(booted, context);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+
+    let settled = false;
+    void settle().then(() => { settled = true; });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flush();
+    expect(settled).toBe(false);
+    expect(record(id).status).toBe("running");
+
+    await vi.advanceTimersByTimeAsync(40_000 * 60_000);
+    vi.useRealTimers();
+    await flush();
+    expect(settled).toBe(true);
+    expect(record(id).status).toBe("stopped");
   });
 });

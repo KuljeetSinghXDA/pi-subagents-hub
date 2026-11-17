@@ -55,6 +55,8 @@ check the entries below for behaviour changes.
 
 - **An abort during worktree setup settles the record and detaches the parent signal.** A stop that landed while `git worktree add` was still awaiting returned before the settle path, so the completion callback never fired, `blocking` stayed unset, and the parent's abort listener stayed attached. A worktree cleanup failure now also lands on the record as `status: "error"` with the message in `record.error`, instead of only reaching the console, so the completion notification shows it. ([#20](https://github.com/ahati/pi-subagents-hub/pull/20))
 
+- **A `headlessWaitMinutes` ceiling above 24.85 days no longer stops the wait immediately.** Node clamps a single `setTimeout` delay over `2^31-1` ms to 1 ms, so a large ceiling fired at once; the ceiling now hops through bounded delays with one `setLongTimeout` helper, shared with the scheduler. The Settings row also enforces the loader's 1440-minute cap, so a value `sanitize` would drop on restart can no longer be saved. ([#22](https://github.com/ahati/pi-subagents-hub/pull/22))
+
 ## [2026.11.131] - 2026-11-13
 
 > **⚠️ Behavior change — a workflow starts only when the user asks for one** ([#451](https://github.com/tintinweb/pi-subagents/pull/451)). A request for a number of agents, like "use 10 agents to …", now runs parallel `Agent` calls instead of a `SubagentWorkflow`. To run a workflow, say so ("use a workflow") or name a saved workflow.

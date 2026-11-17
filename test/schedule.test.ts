@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NO_FALLBACK, registerAgents, setFallbackSubagent } from "../src/agent-types.js";
-import { SubagentScheduler } from "../src/schedule.js";
+import { MAX_TIMEOUT_MS, SubagentScheduler, setLongTimeout } from "../src/schedule.js";
 import { ScheduleStore } from "../src/schedule-store.js";
 
 function makeMockManager() {
@@ -656,5 +656,48 @@ describe("SubagentScheduler — zero-duration and overflowing schedules", () => 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("setLongTimeout", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("fires at exactly MAX_TIMEOUT_MS with one timer", () => {
+    vi.useFakeTimers();
+    const cb = vi.fn();
+    setLongTimeout(MAX_TIMEOUT_MS, cb);
+    expect(vi.getTimerCount()).toBe(1);
+
+    vi.advanceTimersByTime(MAX_TIMEOUT_MS - 1);
+    expect(cb).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  it("hops once past MAX_TIMEOUT_MS and still waits the full delay", () => {
+    vi.useFakeTimers();
+    const cb = vi.fn();
+    setLongTimeout(MAX_TIMEOUT_MS + 1, cb);
+
+    vi.advanceTimersByTime(MAX_TIMEOUT_MS);
+    expect(cb).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(1);
+
+    vi.advanceTimersByTime(1);
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancel before the fire leaves no timer armed", () => {
+    vi.useFakeTimers();
+    const cb = vi.fn();
+    const cancel = setLongTimeout(MAX_TIMEOUT_MS + 1, cb);
+    expect(vi.getTimerCount()).toBe(1);
+
+    cancel();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(MAX_TIMEOUT_MS + 1);
+    expect(cb).not.toHaveBeenCalled();
   });
 });
